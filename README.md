@@ -223,6 +223,17 @@ them.
   `type_ref` to a private type fails to resolve — `oaisp lint` flags it.
 - **Erlang target only.**
 
+## Example
+
+A complete example lives in [`example/`](example/) — a Todo API exercising every
+shape oaisp models (scalars, `List`, `Option`, `Dict`, nested records, enums,
+path/query params, request bodies, several response codes across all methods).
+Its end-to-end check ([`example/e2e/`](example/e2e/)) **generates** the document,
+**validates** it as OpenAPI 3.1 with [redocly](https://github.com/Redocly/redocly-cli),
+and **type-checks** an [`openapi-fetch`](https://openapi-ts.dev/openapi-fetch/)
+client generated from it — so the document is proven both valid and faithfully
+consumable. It runs in CI ([`.github/workflows/e2e.yml`](.github/workflows/e2e.yml)).
+
 ## License
 
 Apache-2.0

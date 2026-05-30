@@ -1,0 +1,23 @@
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  example:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27"
+          gleam-version: "1.16.0"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: bash example/e2e/run.sh

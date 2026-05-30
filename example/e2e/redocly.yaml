@@ -1,0 +1,10 @@
+extends:
+  - recommended
+
+rules:
+  # This demo API is intentionally unauthenticated and unlicensed, so turn off
+  # the governance rules that don't apply. What remains is OpenAPI 3.1
+  # conformance plus the structural best-practice checks.
+  security-defined: off
+  info-license: off
+  operation-4xx-response: off
