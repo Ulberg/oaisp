@@ -17,6 +17,7 @@ import gleam/option.{None, Some}
 import gleam/result
 import oaisp/internal/argv as cli_args
 import oaisp/internal/atomic_write
+import oaisp/internal/codegen
 import oaisp/internal/diff
 import oaisp/internal/emit
 import oaisp/internal/exec
@@ -37,6 +38,7 @@ pub fn main() -> Nil {
       log_error("diff needs two paths: oaisp diff <old.json> <new.json>")
       halt(2)
     }
+    ["derive", ..rest] -> derive_command(rest)
     [] | ["help"] | ["--help"] | ["-h"] -> io.println(help_text())
     [command, ..] -> {
       log_error("unknown command `" <> command <> "`")
@@ -216,13 +218,76 @@ fn format_change(change: diff.Change) -> String {
   tag <> ": " <> change.description
 }
 
+// --- derive ------------------------------------------------------------------
+
+fn derive_command(arguments: List(String)) -> Nil {
+  // `derive` writes the generated module to stdout by default, not a file.
+  let stdout_default = cli_args.Options(cli_args.ToStdout, None, False)
+  case cli_args.parse_with(arguments, stdout_default) {
+    Error(error) -> {
+      log_error(arg_error_message(error))
+      halt(2)
+    }
+    Ok(options) ->
+      case run_derive(options) {
+        Ok(Nil) -> Nil
+        Error(message) -> {
+          log_error(message)
+          halt(1)
+        }
+      }
+  }
+}
+
+fn run_derive(options: cli_args.Options) -> Result(Nil, String) {
+  let log = logger(options)
+  use package_interface_json <- result.try(package_interface_source(
+    options,
+    log,
+  ))
+  use package <- result.try(
+    pkg.decode_string(package_interface_json)
+    |> result.map_error(fn(_) { "could not decode the package interface" }),
+  )
+  let source = codegen.codecs(package)
+  case options.out {
+    cli_args.ToStdout -> {
+      io.println(source)
+      Ok(Nil)
+    }
+    cli_args.ToFile(path) -> {
+      use _ <- result.try(
+        atomic_write.write(path, source)
+        |> result.map_error(fn(reason) {
+          "could not write " <> path <> ": " <> reason
+        }),
+      )
+      log("wrote " <> path)
+      Ok(Nil)
+    }
+  }
+}
+
 // --- shared pipeline ---------------------------------------------------------
 
 fn gather(
   options: cli_args.Options,
   log: fn(String) -> Nil,
 ) -> Result(#(String, String), String) {
-  use package_interface_json <- result.try(case options.package_interface {
+  use package_interface_json <- result.try(package_interface_source(
+    options,
+    log,
+  ))
+  log("collecting endpoint declarations")
+  use endpoints_json <- result.try(emit_endpoints())
+  Ok(#(package_interface_json, endpoints_json))
+}
+
+fn package_interface_source(
+  options: cli_args.Options,
+  log: fn(String) -> Nil,
+) -> Result(String, String) {
+  case options.package_interface {
     Some(path) -> {
       log("reading package interface from " <> path)
       read_file(path)
@@ -231,10 +296,7 @@ fn gather(
       log("running `gleam export package-interface`")
       export_package_interface()
     }
-  })
-  log("collecting endpoint declarations")
-  use endpoints_json <- result.try(emit_endpoints())
-  Ok(#(package_interface_json, endpoints_json))
+  }
 }
 
 fn decode_inputs(
@@ -314,6 +376,8 @@ COMMANDS:
   generate             Emit the OpenAPI 3.1 document
   lint                 Check declarations: type-refs, path params, duplicates
   diff <old> <new>     Report breaking changes between two OpenAPI documents
+  derive               Generate decoders + encoders for your public types
+                       (to stdout by default; -o to write a module file)
 
 OPTIONS:
   -o, --out <PATH>              Output path (default ./openapi.json; - for stdout)

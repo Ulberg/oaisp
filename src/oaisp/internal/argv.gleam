@@ -28,7 +28,16 @@ pub fn default_options() -> Options {
 
 /// Parse the flags accepted by `generate` (everything after the subcommand).
 pub fn parse(arguments: List(String)) -> Result(Options, Error) {
-  do_parse(arguments, default_options())
+  parse_with(arguments, default_options())
+}
+
+/// Parse starting from a caller-supplied default — e.g. `derive` defaults its
+/// output to stdout rather than `./openapi.json`.
+pub fn parse_with(
+  arguments: List(String),
+  default: Options,
+) -> Result(Options, Error) {
+  do_parse(arguments, default)
 }
 
 fn do_parse(

@@ -114,6 +114,18 @@ pub fn resolve_type(
   classify(definition)
 }
 
+/// Every public type in the interface, as `(module, name)` pairs.
+pub fn type_names(package: Package) -> List(#(String, String)) {
+  package.modules
+  |> dict.to_list
+  |> list.flat_map(fn(entry) {
+    let #(module, module_interface) = entry
+    module_interface.types
+    |> dict.keys
+    |> list.map(fn(name) { #(module, name) })
+  })
+}
+
 fn classify(definition: pi.TypeDefinition) -> ResolvedType {
   let documentation = clean_doc(definition.documentation)
   case definition.constructors {
