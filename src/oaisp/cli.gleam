@@ -1,17 +1,18 @@
-//// `gleam run -m oaisp/cli` — the build-time CLI that emits the OpenAPI
-//// document.
+//// `gleam run -m oaisp/cli` — the build-time CLI.
 ////
-//// `generate` orchestrates the whole pipeline: it runs `gleam export
+//// `generate` orchestrates the pipeline: it runs `gleam export
 //// package-interface` for the resolved type information, runs `gleam run --
 //// --emit-endpoints` to collect the endpoint declarations the app wires into
-//// `add_openapi`, merges the two, and writes the document atomically.
+//// `add_openapi`, merges the two, and writes the document atomically. `lint`
+//// runs the same collection, then reports the lint findings.
 ////
-//// Status messages always go to stderr; with `-o -` the document is the only
-//// thing on stdout, so it can be piped to other tools.
+//// Status messages always go to stderr; with `generate -o -` the document is
+//// the only thing on stdout, so it can be piped to other tools.
 
 import argv
 import gleam/int
 import gleam/io
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
 import oaisp/internal/argv as cli_args
@@ -19,6 +20,7 @@ import oaisp/internal/atomic_write
 import oaisp/internal/emit
 import oaisp/internal/exec
 import oaisp/internal/fs
+import oaisp/internal/lint
 import oaisp/internal/merge
 import oaisp/internal/package_interface as pkg
 
@@ -28,6 +30,7 @@ const package_interface_temp = "build/oaisp_package_interface.json"
 pub fn main() -> Nil {
   case argv.load().arguments {
     ["generate", ..rest] -> generate(rest)
+    ["lint", ..rest] -> lint_command(rest)
     [] | ["help"] | ["--help"] | ["-h"] -> io.println(help_text())
     [command, ..] -> {
       log_error("unknown command `" <> command <> "`")
@@ -36,6 +39,8 @@ pub fn main() -> Nil {
     }
   }
 }
+
+// --- generate ----------------------------------------------------------------
 
 fn generate(arguments: List(String)) -> Nil {
   case cli_args.parse(arguments) {
@@ -55,27 +60,11 @@ fn generate(arguments: List(String)) -> Nil {
 }
 
 fn run_generate(options: cli_args.Options) -> Result(Nil, String) {
-  let log = fn(message) {
-    case options.quiet {
-      True -> Nil
-      False -> log_status(message)
-    }
-  }
-
-  use package_interface_json <- result.try(case options.package_interface {
-    Some(path) -> {
-      log("reading package interface from " <> path)
-      read_file(path)
-    }
-    None -> {
-      log("running `gleam export package-interface`")
-      export_package_interface()
-    }
-  })
-
-  log("collecting endpoint declarations")
-  use endpoints_json <- result.try(emit_endpoints())
-
+  let log = logger(options)
+  use #(package_interface_json, endpoints_json) <- result.try(gather(
+    options,
+    log,
+  ))
   use document <- result.try(build_document(
     package_interface_json,
     endpoints_json,
@@ -99,13 +88,103 @@ fn run_generate(options: cli_args.Options) -> Result(Nil, String) {
   }
 }
 
-/// Build the OpenAPI document from the two JSON inputs the pipeline gathers:
-/// the package interface and the emitted endpoint declarations. Pure, so the
-/// heart of `generate` is testable without shelling out.
+/// Build the OpenAPI document from the two JSON inputs the pipeline gathers.
+/// Pure, so the heart of `generate` is testable without shelling out.
 pub fn build_document(
   package_interface_json: String,
   endpoints_json: String,
 ) -> Result(String, String) {
+  use #(package, document) <- result.try(decode_inputs(
+    package_interface_json,
+    endpoints_json,
+  ))
+  Ok(merge.to_string(document.endpoints, document.info, package))
+}
+
+// --- lint --------------------------------------------------------------------
+
+fn lint_command(arguments: List(String)) -> Nil {
+  case cli_args.parse(arguments) {
+    Error(error) -> {
+      log_error(arg_error_message(error))
+      halt(2)
+    }
+    Ok(options) ->
+      case run_lint(options) {
+        Error(message) -> {
+          log_error(message)
+          halt(1)
+        }
+        Ok(findings) -> report(findings, options.quiet)
+      }
+  }
+}
+
+fn run_lint(options: cli_args.Options) -> Result(List(lint.Finding), String) {
+  let log = logger(options)
+  use #(package_interface_json, endpoints_json) <- result.try(gather(
+    options,
+    log,
+  ))
+  use #(package, document) <- result.try(decode_inputs(
+    package_interface_json,
+    endpoints_json,
+  ))
+  Ok(lint.lint(document.endpoints, package))
+}
+
+fn report(findings: List(lint.Finding), quiet: Bool) -> Nil {
+  case findings {
+    [] ->
+      case quiet {
+        True -> Nil
+        False -> log_status("no issues found")
+      }
+    _ -> {
+      list.each(findings, fn(finding) {
+        io.println_error(format_finding(finding))
+      })
+      case lint.has_errors(findings) {
+        True -> halt(1)
+        False -> Nil
+      }
+    }
+  }
+}
+
+fn format_finding(finding: lint.Finding) -> String {
+  let severity = case finding.severity {
+    lint.Violation -> "error"
+    lint.Warning -> "warning"
+  }
+  finding.location <> ": " <> severity <> ": " <> finding.message
+}
+
+// --- shared pipeline ---------------------------------------------------------
+
+fn gather(
+  options: cli_args.Options,
+  log: fn(String) -> Nil,
+) -> Result(#(String, String), String) {
+  use package_interface_json <- result.try(case options.package_interface {
+    Some(path) -> {
+      log("reading package interface from " <> path)
+      read_file(path)
+    }
+    None -> {
+      log("running `gleam export package-interface`")
+      export_package_interface()
+    }
+  })
+  log("collecting endpoint declarations")
+  use endpoints_json <- result.try(emit_endpoints())
+  Ok(#(package_interface_json, endpoints_json))
+}
+
+fn decode_inputs(
+  package_interface_json: String,
+  endpoints_json: String,
+) -> Result(#(pkg.Package, emit.Document), String) {
   use package <- result.try(
     pkg.decode_string(package_interface_json)
     |> result.map_error(fn(_) { "could not decode the package interface" }),
@@ -114,7 +193,7 @@ pub fn build_document(
     emit.parse(endpoints_json)
     |> result.map_error(fn(_) { "could not parse the emitted endpoints" }),
   )
-  Ok(merge.to_string(document.endpoints, document.info, package))
+  Ok(#(package, document))
 }
 
 fn export_package_interface() -> Result(String, String) {
@@ -145,6 +224,15 @@ fn read_file(path: String) -> Result(String, String) {
   |> result.map_error(fn(reason) { "could not read " <> path <> ": " <> reason })
 }
 
+fn logger(options: cli_args.Options) -> fn(String) -> Nil {
+  fn(message) {
+    case options.quiet {
+      True -> Nil
+      False -> log_status(message)
+    }
+  }
+}
+
 fn arg_error_message(error: cli_args.Error) -> String {
   case error {
     cli_args.UnknownFlag(flag) -> "unknown flag `" <> flag <> "`"
@@ -164,7 +252,11 @@ fn help_text() -> String {
   "oaisp — generate an OpenAPI 3.1 document from your Gleam code
 
 USAGE:
-  gleam run -m oaisp/cli generate [OPTIONS]
+  gleam run -m oaisp/cli <COMMAND> [OPTIONS]
+
+COMMANDS:
+  generate    Emit the OpenAPI 3.1 document
+  lint        Check declarations: type-ref existence, path params, duplicates
 
 OPTIONS:
   -o, --out <PATH>              Output path (default ./openapi.json; - for stdout)
@@ -175,4 +267,4 @@ OPTIONS:
 }
 
 @external(erlang, "erlang", "halt")
-fn halt(code: Int) -> Nil
+fn halt(code: Int) -> a
