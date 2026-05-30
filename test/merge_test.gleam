@@ -1,12 +1,12 @@
 import gleam/dynamic/decode
 import gleam/json
-import oaisp/codec
 import oaisp/endpoint
 import oaisp/info
 import oaisp/internal/fs
 import oaisp/internal/merge
 import oaisp/internal/package_interface as pkg
 import oaisp/param
+import oaisp/schema
 
 fn package() -> pkg.Package {
   let assert Ok(content) = fs.read("test/fixtures/package_interface.json")
@@ -14,27 +14,23 @@ fn package() -> pkg.Package {
   decoded
 }
 
-fn todo_codec() -> codec.Codec(Nil) {
-  codec.codec(
-    decode.success(Nil),
-    fn(_) { json.null() },
-    codec.type_ref("shop/types", "Todo"),
-  )
+fn todo_ref() -> schema.Schema {
+  schema.type_ref("shop/types", "Todo")
 }
 
 fn endpoints() -> List(endpoint.Endpoint) {
   [
     endpoint.get("/todos")
       |> endpoint.with_query_param("limit", param.int(), False)
-      |> endpoint.with_response(200, todo_codec())
+      |> endpoint.with_response(200, todo_ref())
       |> endpoint.with_summary("List todos")
       |> endpoint.with_tag("todos"),
     endpoint.post("/todos")
-      |> endpoint.with_body(todo_codec())
-      |> endpoint.with_response(201, todo_codec()),
+      |> endpoint.with_body(todo_ref())
+      |> endpoint.with_response(201, todo_ref()),
     endpoint.get("/todos/{id}")
       |> endpoint.with_path_param("id", param.string())
-      |> endpoint.with_response(200, todo_codec())
+      |> endpoint.with_response(200, todo_ref())
       |> endpoint.with_empty_response(404, "Not found"),
   ]
 }

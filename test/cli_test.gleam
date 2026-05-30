@@ -2,20 +2,16 @@ import gleam/dynamic/decode
 import gleam/json
 import gleam/result
 import oaisp/cli
-import oaisp/codec
 import oaisp/endpoint
 import oaisp/info
 import oaisp/internal/emit
 import oaisp/internal/exec
 import oaisp/internal/fs
 import oaisp/param
+import oaisp/schema
 
-fn todo_codec() -> codec.Codec(Nil) {
-  codec.codec(
-    decode.success(Nil),
-    fn(_) { json.null() },
-    codec.type_ref("shop/types", "Todo"),
-  )
+fn todo_ref() -> schema.Schema {
+  schema.type_ref("shop/types", "Todo")
 }
 
 fn package_interface_json() -> String {
@@ -28,7 +24,7 @@ fn endpoints_json() -> String {
     emit.Document(info: info.info("Todo API", "1.0.0"), endpoints: [
       endpoint.get("/todos/{id}")
       |> endpoint.with_path_param("id", param.string())
-      |> endpoint.with_response(200, todo_codec()),
+      |> endpoint.with_response(200, todo_ref()),
     ]),
   )
 }

@@ -17,10 +17,13 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/set.{type Set}
 import gleam/string
-import oaisp/codec
 import oaisp/endpoint.{type Endpoint}
 import oaisp/info.{type Info}
 import oaisp/internal/package_interface as pkg
+import oaisp/schema.{
+  type ScalarKind, type Schema, BoolKind, FloatKind, IntKind, Scalar, StringKind,
+  TypeRef,
+}
 
 const openapi_version = "3.1.0"
 
@@ -162,7 +165,7 @@ fn parameter(
   )
 }
 
-fn request_body_object(schema: codec.Schema, resolvable: Set(String)) -> Json {
+fn request_body_object(schema: Schema, resolvable: Set(String)) -> Json {
   json.object([
     #("required", json.bool(True)),
     #("content", content(schema_oas(schema, resolvable))),
@@ -292,25 +295,25 @@ fn endpoint_refs(e: Endpoint) -> List(#(String, String)) {
   |> list.filter_map(type_ref)
 }
 
-fn type_ref(schema: codec.Schema) -> Result(#(String, String), Nil) {
+fn type_ref(schema: Schema) -> Result(#(String, String), Nil) {
   case schema {
-    codec.TypeRef(module:, name:) -> Ok(#(module, name))
-    codec.Scalar(..) -> Error(Nil)
+    TypeRef(module:, name:) -> Ok(#(module, name))
+    Scalar(..) -> Error(Nil)
   }
 }
 
-fn body_schemas(e: Endpoint) -> List(codec.Schema) {
+fn body_schemas(e: Endpoint) -> List(Schema) {
   case endpoint.body(e) {
     Some(schema) -> [schema]
     None -> []
   }
 }
 
-fn response_schemas(e: Endpoint) -> List(codec.Schema) {
+fn response_schemas(e: Endpoint) -> List(Schema) {
   list.filter_map(endpoint.responses(e), fn(r) { option.to_result(r.body, Nil) })
 }
 
-fn param_schemas(e: Endpoint) -> List(codec.Schema) {
+fn param_schemas(e: Endpoint) -> List(Schema) {
   list.append(
     list.map(endpoint.path_params(e), fn(p) { p.schema }),
     list.map(endpoint.query_params(e), fn(p) { p.schema }),
@@ -380,31 +383,31 @@ fn field_oas(field_type: pkg.FieldType, resolvable: Set(String)) -> Oas {
   }
 }
 
-fn schema_oas(schema: codec.Schema, resolvable: Set(String)) -> Oas {
+fn schema_oas(schema: Schema, resolvable: Set(String)) -> Oas {
   case schema {
-    codec.TypeRef(_module, name) -> ref_or_any(name, resolvable)
-    codec.Scalar(kind, _description) -> scalar_oas(kind)
+    TypeRef(_module, name) -> ref_or_any(name, resolvable)
+    Scalar(kind, _description) -> scalar_oas(kind)
   }
 }
 
 /// A parameter's schema plus the description it should carry at the parameter
 /// level (OpenAPI parameter objects describe themselves, not via the schema).
 fn param_schema(
-  schema: codec.Schema,
+  schema: Schema,
   resolvable: Set(String),
 ) -> #(Oas, Option(String)) {
   case schema {
-    codec.Scalar(kind, description) -> #(scalar_oas(kind), description)
-    codec.TypeRef(_module, name) -> #(ref_or_any(name, resolvable), None)
+    Scalar(kind, description) -> #(scalar_oas(kind), description)
+    TypeRef(_module, name) -> #(ref_or_any(name, resolvable), None)
   }
 }
 
-fn scalar_oas(kind: codec.ScalarKind) -> Oas {
+fn scalar_oas(kind: ScalarKind) -> Oas {
   case kind {
-    codec.StringKind -> OString
-    codec.IntKind -> OInteger
-    codec.BoolKind -> OBoolean
-    codec.FloatKind -> ONumber
+    StringKind -> OString
+    IntKind -> OInteger
+    BoolKind -> OBoolean
+    FloatKind -> ONumber
   }
 }
 

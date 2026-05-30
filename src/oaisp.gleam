@@ -5,37 +5,34 @@
 //// truthful OpenAPI 3.1 document at build time. The Gleam code is the single
 //// source of truth; the spec is a sound projection of it.
 ////
-//// This module is the public surface: it re-exports the builders so callers
-//// can stay in a single `oaisp.*` namespace, and provides [`add_openapi`](#add_openapi),
-//// the one-line build-time hook. Scalar param helpers live in
+//// oaisp is non-intrusive: an endpoint refers to its body/response types by
+//// name (`type_ref`), and oaisp resolves their schemas from the package
+//// interface. It never sees your decoders or encoders — your handlers stay
+//// entirely yours.
+////
+//// This module is the public surface. Scalar param helpers live in
 //// [`oaisp/param`](./oaisp/param.html); the CLI in
 //// [`oaisp/cli`](./oaisp/cli.html).
 
 import argv
-import gleam/dynamic/decode
 import gleam/io
-import gleam/json
 import gleam/list
-import oaisp/codec as codec_module
 import oaisp/endpoint as endpoint_module
 import oaisp/info as info_module
 import oaisp/internal/emit
+import oaisp/schema as schema_module
 
 /// The version of the oaisp library.
 pub const version: String = "0.1.0"
 
-/// A codec bundling a decoder, encoder, and schema for a type. See
-/// [`oaisp/codec`](./oaisp/codec.html).
-pub type Codec(t) =
-  codec_module.Codec(t)
-
-/// How a value's schema is described in the document.
+/// A schema reference for a body, response, or parameter. See
+/// [`oaisp/schema`](./oaisp/schema.html).
 pub type Schema =
-  codec_module.Schema
+  schema_module.Schema
 
 /// The primitive kinds an inline scalar schema can take.
 pub type ScalarKind =
-  codec_module.ScalarKind
+  schema_module.ScalarKind
 
 /// A single endpoint declaration. See [`oaisp/endpoint`](./oaisp/endpoint.html).
 pub type Endpoint =
@@ -49,18 +46,10 @@ pub type Method =
 pub type Info =
   info_module.Info
 
-/// Bundle a decoder, an encoder, and a schema into a [`Codec`](#Codec).
-pub fn codec(
-  decode decode: decode.Decoder(t),
-  encode encode: fn(t) -> json.Json,
-  schema schema: Schema,
-) -> Codec(t) {
-  codec_module.codec(decode:, encode:, schema:)
-}
-
-/// A schema referring to a public Gleam type, resolved at merge time.
+/// A schema referring to a public Gleam type, resolved at merge time from the
+/// package interface.
 pub fn type_ref(module module: String, name name: String) -> Schema {
-  codec_module.type_ref(module:, name:)
+  schema_module.type_ref(module:, name:)
 }
 
 /// A `GET` endpoint at `path`.
@@ -88,18 +77,18 @@ pub fn delete(path: String) -> Endpoint {
   endpoint_module.delete(path)
 }
 
-/// Attach a request-body schema, taken from `codec`.
-pub fn with_body(endpoint: Endpoint, codec: Codec(t)) -> Endpoint {
-  endpoint_module.with_body(endpoint, codec)
+/// Attach a request-body schema, given the body type's reference.
+pub fn with_body(endpoint: Endpoint, schema: Schema) -> Endpoint {
+  endpoint_module.with_body(endpoint, schema)
 }
 
-/// Document a response with a body schema for `status`.
+/// Document a response for `status`, given the response type's reference.
 pub fn with_response(
   endpoint: Endpoint,
   status: Int,
-  codec: Codec(t),
+  schema: Schema,
 ) -> Endpoint {
-  endpoint_module.with_response(endpoint, status, codec)
+  endpoint_module.with_response(endpoint, status, schema)
 }
 
 /// Document an empty (bodyless) response for `status`, with a description.

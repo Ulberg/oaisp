@@ -1,13 +1,11 @@
-import gleam/dynamic/decode
-import gleam/json
 import gleam/list
 import gleam/string
-import oaisp/codec
 import oaisp/endpoint
 import oaisp/internal/fs
 import oaisp/internal/lint
 import oaisp/internal/package_interface as pkg
 import oaisp/param
+import oaisp/schema
 
 fn package() -> pkg.Package {
   let assert Ok(content) = fs.read("test/fixtures/package_interface.json")
@@ -15,12 +13,8 @@ fn package() -> pkg.Package {
   decoded
 }
 
-fn codec_for(name: String) -> codec.Codec(Nil) {
-  codec.codec(
-    decode.success(Nil),
-    fn(_) { json.null() },
-    codec.type_ref("shop/types", name),
-  )
+fn type_for(name: String) -> schema.Schema {
+  schema.type_ref("shop/types", name)
 }
 
 fn has(
@@ -37,7 +31,7 @@ pub fn clean_endpoint_has_no_findings_test() {
   let endpoints = [
     endpoint.get("/todos/{id}")
     |> endpoint.with_path_param("id", param.string())
-    |> endpoint.with_response(200, codec_for("Todo")),
+    |> endpoint.with_response(200, type_for("Todo")),
   ]
   assert lint.lint(endpoints, package()) == []
 }
@@ -45,7 +39,7 @@ pub fn clean_endpoint_has_no_findings_test() {
 pub fn missing_path_param_declaration_is_an_error_test() {
   let endpoints = [
     endpoint.get("/todos/{id}")
-    |> endpoint.with_response(200, codec_for("Todo")),
+    |> endpoint.with_response(200, type_for("Todo")),
   ]
   let findings = lint.lint(endpoints, package())
   assert lint.has_errors(findings)
@@ -56,7 +50,7 @@ pub fn declared_param_absent_from_path_is_an_error_test() {
   let endpoints = [
     endpoint.get("/todos")
     |> endpoint.with_path_param("id", param.string())
-    |> endpoint.with_response(200, codec_for("Todo")),
+    |> endpoint.with_response(200, type_for("Todo")),
   ]
   assert has(
     lint.lint(endpoints, package()),
@@ -67,7 +61,7 @@ pub fn declared_param_absent_from_path_is_an_error_test() {
 
 pub fn duplicate_operation_is_an_error_test() {
   let make = fn() {
-    endpoint.get("/todos") |> endpoint.with_response(200, codec_for("Todo"))
+    endpoint.get("/todos") |> endpoint.with_response(200, type_for("Todo"))
   }
   assert has(
     lint.lint([make(), make()], package()),
@@ -78,7 +72,7 @@ pub fn duplicate_operation_is_an_error_test() {
 
 pub fn unresolvable_type_ref_is_an_error_test() {
   let endpoints = [
-    endpoint.get("/x") |> endpoint.with_response(200, codec_for("Ghost")),
+    endpoint.get("/x") |> endpoint.with_response(200, type_for("Ghost")),
   ]
   assert has(lint.lint(endpoints, package()), lint.Violation, "Ghost")
 }
@@ -86,7 +80,7 @@ pub fn unresolvable_type_ref_is_an_error_test() {
 pub fn under_described_type_is_a_warning_test() {
   // Token is a single positional-field newtype, so it resolves to Unmodelled.
   let endpoints = [
-    endpoint.get("/x") |> endpoint.with_response(200, codec_for("Token")),
+    endpoint.get("/x") |> endpoint.with_response(200, type_for("Token")),
   ]
   let findings = lint.lint(endpoints, package())
   assert has(findings, lint.Warning, "under-described")

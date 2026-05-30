@@ -11,9 +11,7 @@ import gleam/dynamic/decode
 import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import oaisp/codec.{
-  type Codec, type Schema, schema, schema_decoder, schema_to_json,
-}
+import oaisp/schema.{type Schema, schema_decoder, schema_to_json}
 
 /// An HTTP method oaisp can document.
 pub type Method {
@@ -96,17 +94,17 @@ pub fn delete(path: String) -> Endpoint {
 }
 
 /// Attach a request-body schema, taken from `codec`.
-pub fn with_body(endpoint: Endpoint, codec: Codec(t)) -> Endpoint {
-  Endpoint(..endpoint, body: Some(schema(codec)))
+pub fn with_body(endpoint: Endpoint, schema: Schema) -> Endpoint {
+  Endpoint(..endpoint, body: Some(schema))
 }
 
 /// Document a response with a body schema for `status`.
 pub fn with_response(
   endpoint: Endpoint,
   status: Int,
-  codec: Codec(t),
+  schema: Schema,
 ) -> Endpoint {
-  let response = Response(status:, body: Some(schema(codec)), description: None)
+  let response = Response(status:, body: Some(schema), description: None)
   Endpoint(..endpoint, responses: list.append(endpoint.responses, [response]))
 }
 

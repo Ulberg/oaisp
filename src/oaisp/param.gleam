@@ -2,7 +2,7 @@
 //// where a full type reference would be overkill.
 
 import gleam/option.{None}
-import oaisp/codec.{
+import oaisp/schema.{
   type Schema, BoolKind, FloatKind, IntKind, Scalar, StringKind,
 }
 

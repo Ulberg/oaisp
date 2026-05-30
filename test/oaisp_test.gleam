@@ -1,5 +1,3 @@
-import gleam/dynamic/decode
-import gleam/json
 import gleeunit
 import oaisp
 import oaisp/endpoint
@@ -20,12 +18,7 @@ pub fn add_openapi_passes_builder_through_test() {
 }
 
 pub fn reexported_builders_delegate_test() {
-  let item =
-    oaisp.codec(
-      decode.success(Nil),
-      fn(_) { json.null() },
-      oaisp.type_ref("m", "Todo"),
-    )
+  let item = oaisp.type_ref("myapp/types", "Todo")
   let via_oaisp =
     oaisp.get("/x")
     |> oaisp.with_response(200, item)

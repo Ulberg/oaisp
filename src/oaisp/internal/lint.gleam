@@ -16,9 +16,9 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/order
 import gleam/string
-import oaisp/codec
 import oaisp/endpoint.{type Endpoint}
 import oaisp/internal/package_interface as pkg
+import oaisp/schema.{Scalar, TypeRef}
 
 /// How serious a finding is. A `Violation` should fail a CI lint gate; a
 /// `Warning` is advisory (the document is still sound, just less precise).
@@ -146,8 +146,8 @@ fn endpoint_type_refs(e: Endpoint) -> List(#(String, String)) {
   |> list.flatten
   |> list.filter_map(fn(schema) {
     case schema {
-      codec.TypeRef(module:, name:) -> Ok(#(module, name))
-      codec.Scalar(..) -> Error(Nil)
+      TypeRef(module:, name:) -> Ok(#(module, name))
+      Scalar(..) -> Error(Nil)
     }
   })
   |> list.unique
