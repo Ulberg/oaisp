@@ -7,9 +7,13 @@
 //// [`post`](#post), …) and refined with the `with_*` combinators; it is opaque
 //// so it can never exist without a method and a path.
 
+import gleam/dynamic/decode
+import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import oaisp/codec.{type Codec, type Schema, schema}
+import oaisp/codec.{
+  type Codec, type Schema, schema, schema_decoder, schema_to_json,
+}
 
 /// An HTTP method oaisp can document.
 pub type Method {
@@ -219,4 +223,103 @@ pub fn method_to_string(method: Method) -> String {
     Patch -> "patch"
     Delete -> "delete"
   }
+}
+
+// --- internal wire format (for `--emit-endpoints`) ---------------------------
+
+fn method_from_string(name: String) -> Result(Method, Nil) {
+  case name {
+    "get" -> Ok(Get)
+    "post" -> Ok(Post)
+    "put" -> Ok(Put)
+    "patch" -> Ok(Patch)
+    "delete" -> Ok(Delete)
+    _ -> Error(Nil)
+  }
+}
+
+fn method_decoder() -> decode.Decoder(Method) {
+  use raw <- decode.then(decode.string)
+  case method_from_string(raw) {
+    Ok(method) -> decode.success(method)
+    Error(Nil) -> decode.failure(Get, "Method")
+  }
+}
+
+fn param_to_json(param: Param) -> json.Json {
+  json.object([
+    #("name", json.string(param.name)),
+    #("required", json.bool(param.required)),
+    #("schema", schema_to_json(param.schema)),
+  ])
+}
+
+fn param_decoder() -> decode.Decoder(Param) {
+  use name <- decode.field("name", decode.string)
+  use required <- decode.field("required", decode.bool)
+  use param_schema <- decode.field("schema", schema_decoder())
+  decode.success(Param(name:, schema: param_schema, required:))
+}
+
+fn response_to_json(response: Response) -> json.Json {
+  json.object([
+    #("status", json.int(response.status)),
+    #("body", json.nullable(response.body, schema_to_json)),
+    #("description", json.nullable(response.description, json.string)),
+  ])
+}
+
+fn response_decoder() -> decode.Decoder(Response) {
+  use status <- decode.field("status", decode.int)
+  use body <- decode.field("body", decode.optional(schema_decoder()))
+  use description <- decode.field("description", decode.optional(decode.string))
+  decode.success(Response(status:, body:, description:))
+}
+
+/// Encode an [`Endpoint`](#Endpoint) to the internal wire JSON.
+@internal
+pub fn to_json(endpoint: Endpoint) -> json.Json {
+  json.object([
+    #("method", json.string(method_to_string(endpoint.method))),
+    #("path", json.string(endpoint.path)),
+    #("summary", json.nullable(endpoint.summary, json.string)),
+    #("description", json.nullable(endpoint.description, json.string)),
+    #("operation_id", json.nullable(endpoint.operation_id, json.string)),
+    #("tags", json.array(endpoint.tags, json.string)),
+    #("path_params", json.array(endpoint.path_params, param_to_json)),
+    #("query_params", json.array(endpoint.query_params, param_to_json)),
+    #("body", json.nullable(endpoint.body, schema_to_json)),
+    #("responses", json.array(endpoint.responses, response_to_json)),
+  ])
+}
+
+/// Decode an [`Endpoint`](#Endpoint) from the internal wire JSON. Reconstructs
+/// the opaque value through its private constructor.
+@internal
+pub fn decoder() -> decode.Decoder(Endpoint) {
+  use method <- decode.field("method", method_decoder())
+  use path <- decode.field("path", decode.string)
+  use summary <- decode.field("summary", decode.optional(decode.string))
+  use description <- decode.field("description", decode.optional(decode.string))
+  use operation_id <- decode.field(
+    "operation_id",
+    decode.optional(decode.string),
+  )
+  use tags <- decode.field("tags", decode.list(decode.string))
+  use path_params <- decode.field("path_params", decode.list(param_decoder()))
+  use query_params <- decode.field("query_params", decode.list(param_decoder()))
+  use body <- decode.field("body", decode.optional(schema_decoder()))
+  use responses <- decode.field("responses", decode.list(response_decoder()))
+  decode.success(Endpoint(
+    method:,
+    path:,
+    summary:,
+    description:,
+    operation_id:,
+    tags:,
+    path_params:,
+    query_params:,
+    body:,
+    responses:,
+  ))
 }
