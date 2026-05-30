@@ -11,10 +11,10 @@ pub fn handle(request: wisp.Request) -> wisp.Response {
   case wisp.path_segments(request), request.method {
     ["todos"], http.Get -> json_ok(todo_page())
     ["todos"], http.Post ->
-      wisp.json_response(json.to_string(todo("created-id")), 201)
+      wisp.json_response(json.to_string(todo_json("created-id")), 201)
     ["todos", "missing"], http.Get -> api_error(404, "todo not found")
-    ["todos", id], http.Get -> json_ok(todo(id))
-    ["todos", id], http.Put -> json_ok(todo(id))
+    ["todos", id], http.Get -> json_ok(todo_json(id))
+    ["todos", id], http.Put -> json_ok(todo_json(id))
     ["todos", _id], http.Delete -> wisp.no_content()
     ["users", "missing"], http.Get -> api_error(404, "user not found")
     ["users", id], http.Get -> json_ok(user(id))
@@ -46,7 +46,7 @@ fn user(id: String) -> Json {
   ])
 }
 
-fn todo(id: String) -> Json {
+fn todo_json(id: String) -> Json {
   json.object([
     #("id", json.string(id)),
     #("title", json.string("Write the docs")),
@@ -63,7 +63,7 @@ fn todo(id: String) -> Json {
 
 fn todo_page() -> Json {
   json.object([
-    #("items", json.preprocessed_array([todo("t1"), todo("t2")])),
+    #("items", json.preprocessed_array([todo_json("t1"), todo_json("t2")])),
     #("total", json.int(2)),
     #("next", json.null()),
   ])
