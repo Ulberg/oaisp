@@ -17,6 +17,7 @@ import gleam/option.{None, Some}
 import gleam/result
 import oaisp/internal/argv as cli_args
 import oaisp/internal/atomic_write
+import oaisp/internal/diff
 import oaisp/internal/emit
 import oaisp/internal/exec
 import oaisp/internal/fs
@@ -31,6 +32,11 @@ pub fn main() -> Nil {
   case argv.load().arguments {
     ["generate", ..rest] -> generate(rest)
     ["lint", ..rest] -> lint_command(rest)
+    ["diff", old, new, ..] -> diff_command(old, new)
+    ["diff", ..] -> {
+      log_error("diff needs two paths: oaisp diff <old.json> <new.json>")
+      halt(2)
+    }
     [] | ["help"] | ["--help"] | ["-h"] -> io.println(help_text())
     [command, ..] -> {
       log_error("unknown command `" <> command <> "`")
@@ -160,6 +166,56 @@ fn format_finding(finding: lint.Finding) -> String {
   finding.location <> ": " <> severity <> ": " <> finding.message
 }
 
+// --- diff --------------------------------------------------------------------
+
+fn diff_command(old_path: String, new_path: String) -> Nil {
+  case run_diff(old_path, new_path) {
+    Error(message) -> {
+      log_error(message)
+      halt(1)
+    }
+    Ok(changes) -> report_changes(changes)
+  }
+}
+
+fn run_diff(
+  old_path: String,
+  new_path: String,
+) -> Result(List(diff.Change), String) {
+  use old_document <- result.try(read_file(old_path))
+  use new_document <- result.try(read_file(new_path))
+  use old_spec <- result.try(
+    diff.decode_spec(old_document)
+    |> result.map_error(fn(message) { old_path <> ": " <> message }),
+  )
+  use new_spec <- result.try(
+    diff.decode_spec(new_document)
+    |> result.map_error(fn(message) { new_path <> ": " <> message }),
+  )
+  Ok(diff.diff(old_spec, new_spec))
+}
+
+fn report_changes(changes: List(diff.Change)) -> Nil {
+  case changes {
+    [] -> log_status("no changes")
+    _ -> {
+      list.each(changes, fn(change) { io.println_error(format_change(change)) })
+      case diff.has_breaking(changes) {
+        True -> halt(1)
+        False -> Nil
+      }
+    }
+  }
+}
+
+fn format_change(change: diff.Change) -> String {
+  let tag = case change.breaking {
+    True -> "BREAKING"
+    False -> "non-breaking"
+  }
+  tag <> ": " <> change.description
+}
+
 // --- shared pipeline ---------------------------------------------------------
 
 fn gather(
@@ -255,8 +311,9 @@ USAGE:
   gleam run -m oaisp/cli <COMMAND> [OPTIONS]
 
 COMMANDS:
-  generate    Emit the OpenAPI 3.1 document
-  lint        Check declarations: type-ref existence, path params, duplicates
+  generate             Emit the OpenAPI 3.1 document
+  lint                 Check declarations: type-refs, path params, duplicates
+  diff <old> <new>     Report breaking changes between two OpenAPI documents
 
 OPTIONS:
   -o, --out <PATH>              Output path (default ./openapi.json; - for stdout)
