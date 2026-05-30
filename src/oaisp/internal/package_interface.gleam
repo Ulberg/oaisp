@@ -14,7 +14,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/package_interface as pi
 import gleam/result
 import gleam/string
-import simplifile
+import oaisp/internal/fs
 
 /// A decoded package interface — the public surface of one Gleam package.
 pub type Package =
@@ -23,7 +23,7 @@ pub type Package =
 /// Why loading or resolving against a package interface failed.
 pub type Error {
   /// The package-interface file could not be read.
-  CouldNotRead(path: String, reason: simplifile.FileError)
+  CouldNotRead(path: String, reason: String)
   /// The package-interface JSON could not be decoded.
   CouldNotParse(reason: json.DecodeError)
   /// No module with this path exists in the package interface.
@@ -84,7 +84,7 @@ pub fn decode_string(input: String) -> Result(Package, Error) {
 /// Read and decode a package interface from a file path.
 pub fn load(path: String) -> Result(Package, Error) {
   use content <- result.try(
-    simplifile.read(path) |> result.map_error(CouldNotRead(path, _)),
+    fs.read(path) |> result.map_error(CouldNotRead(path, _)),
   )
   decode_string(content)
 }

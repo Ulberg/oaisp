@@ -1,10 +1,9 @@
 import gleam/option.{Some}
+import oaisp/internal/fs
 import oaisp/internal/package_interface as pkg
-import simplifile
 
 fn fixture() -> pkg.Package {
-  let assert Ok(content) =
-    simplifile.read("test/fixtures/package_interface.json")
+  let assert Ok(content) = fs.read("test/fixtures/package_interface.json")
   let assert Ok(package) = pkg.decode_string(content)
   package
 }

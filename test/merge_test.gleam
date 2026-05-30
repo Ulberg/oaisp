@@ -3,14 +3,13 @@ import gleam/json
 import oaisp/codec
 import oaisp/endpoint
 import oaisp/info
+import oaisp/internal/fs
 import oaisp/internal/merge
 import oaisp/internal/package_interface as pkg
 import oaisp/param
-import simplifile
 
 fn package() -> pkg.Package {
-  let assert Ok(content) =
-    simplifile.read("test/fixtures/package_interface.json")
+  let assert Ok(content) = fs.read("test/fixtures/package_interface.json")
   let assert Ok(decoded) = pkg.decode_string(content)
   decoded
 }
