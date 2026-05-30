@@ -1,25 +1,25 @@
-//// Entry point. `oaisp generate` runs this with `--emit-endpoints`, at which
-//// point `add_openapi` prints the declarations and exits.
+//// A real Wisp/mist server, with the one-line oaisp hook.
 ////
-//// In a real Wisp app this is your server pipeline:
-////
-//// ```gleam
-//// wisp_mist.handler(router.handle_request, secret_key_base)
-//// |> mist.new
-//// |> oaisp.add_openapi(api.endpoints(), info)
-//// |> mist.port(8080)
-//// |> mist.start
-//// ```
-////
-//// `add_openapi` is a generic pass-through, so the placeholder builder below
-//// stands in for the mist builder without pulling in a server dependency.
+//// Run normally, it serves the API on port 8080. Run with `--emit-endpoints`
+//// (as `oaisp generate` does internally), `add_openapi` prints the endpoint
+//// declarations and exits before the server starts — that is the whole
+//// integration.
 
 import example/api
+import example/router
+import gleam/erlang/process
 import gleam/option.{Some}
+import mist
 import oaisp
 import oaisp/info
+import wisp
+import wisp/wisp_mist
 
 pub fn main() {
+  // (A real app would also call `wisp.configure_logger()`; we skip it so that
+  // under `--emit-endpoints` the only thing on stdout is the emitted JSON.)
+  let secret_key_base = wisp.random_string(64)
+
   // `info` is a plain record: build the common case and spread to add a
   // description and the servers the API is reachable at.
   let document_info =
@@ -28,6 +28,13 @@ pub fn main() {
       description: Some("A small API exercising every shape oaisp models."),
       servers: ["http://localhost:8080"],
     )
-  let _placeholder_builder = oaisp.add_openapi(Nil, api.endpoints(), document_info)
-  Nil
+
+  let assert Ok(_) =
+    wisp_mist.handler(router.handle, secret_key_base)
+    |> mist.new
+    |> oaisp.add_openapi(api.endpoints(), document_info)
+    |> mist.port(8080)
+    |> mist.start
+
+  process.sleep_forever()
 }

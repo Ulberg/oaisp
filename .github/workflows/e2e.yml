@@ -21,3 +21,4 @@ jobs:
         with:
           node-version: "22"
       - run: bash example/e2e/run.sh
+      - run: bash example/e2e/live.sh
