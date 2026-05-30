@@ -10,6 +10,10 @@ of it, derived from the compiler's own resolved type information
 (`gleam export package-interface`). No spec-first scaffolding, no runtime
 reflection, no source re-parsing.
 
+**Non-intrusive by design.** An endpoint points at its body/response types *by
+name*; oaisp resolves their schemas from the package interface. It never sees
+your decoders or encoders — your handlers stay entirely yours.
+
 ## Requirements
 
 - **Erlang/OTP 27+** — oaisp depends on `gleam_json` 3.x, which uses the `json`
@@ -24,14 +28,13 @@ your Gleam types ──► gleam export package-interface ─┐
 your endpoint declarations ──► --emit-endpoints ──────┘
 ```
 
-1. You bundle each type's decoder, encoder, and a **schema reference** into a
-   `Codec`. Your handlers use the decoder/encoder; oaisp uses the schema.
-2. You declare endpoints (method, path, params, body, responses) as values.
-3. `oaisp.add_openapi` is a one-line hook in your `main`. At runtime it does
+1. You declare endpoints (method, path, params, body, responses) as values. The
+   body and each response refer to a type by name with `type_ref`.
+2. `oaisp.add_openapi` is a one-line hook in your `main`. At runtime it does
    nothing but peek `argv`; under `--emit-endpoints` it dumps the declarations
    and exits.
-4. `gleam run -m oaisp/cli generate` runs the package-interface export, collects
-   the declarations, resolves every `TypeRef` against the resolved type
+3. `gleam run -m oaisp/cli generate` runs the package-interface export, collects
+   the declarations, resolves every `type_ref` against the resolved type
    information, and writes `openapi.json`.
 
 The router stays hand-written — oaisp never owns it. **Soundness over
@@ -41,38 +44,23 @@ can't derive, is simply left out or described permissively).
 
 ## Quickstart
 
-### 1. Define types and codecs
+### 1. Your types are just types
 
 ```gleam
 // src/myapp/types.gleam
-import gleam/dynamic/decode
-import gleam/json
-import oaisp
 
+/// A todo item.
 pub type Todo {
   Todo(id: String, title: String, done: Bool)
 }
 
-pub fn todo_codec() -> oaisp.Codec(Todo) {
-  oaisp.codec(
-    decode: {
-      use id <- decode.field("id", decode.string)
-      use title <- decode.field("title", decode.string)
-      use done <- decode.field("done", decode.bool)
-      decode.success(Todo(id:, title:, done:))
-    },
-    encode: fn(todo) {
-      json.object([
-        #("id", json.string(todo.id)),
-        #("title", json.string(todo.title)),
-        #("done", json.bool(todo.done)),
-      ])
-    },
-    // Refers to the public type; resolved from the package interface at merge time.
-    schema: oaisp.type_ref("myapp/types", "Todo"),
-  )
+/// Fields for creating a todo.
+pub type NewTodo {
+  NewTodo(title: String)
 }
 ```
+
+No oaisp wrappers, no required codec. Doc-comments become schema descriptions.
 
 ### 2. Declare endpoints
 
@@ -82,21 +70,29 @@ import myapp/types
 import oaisp
 import oaisp/param
 
+// A tiny helper keeps the type references tidy.
+fn todo() -> oaisp.Schema {
+  oaisp.type_ref("myapp/types", "Todo")
+}
+
 pub fn all() -> List(oaisp.Endpoint) {
   [
     oaisp.get("/todos")
-      |> oaisp.with_response(200, types.todo_codec())
+      |> oaisp.with_response(200, todo())
       |> oaisp.with_summary("List all todos"),
     oaisp.post("/todos")
-      |> oaisp.with_body(types.todo_codec())
-      |> oaisp.with_response(201, types.todo_codec()),
+      |> oaisp.with_body(oaisp.type_ref("myapp/types", "NewTodo"))
+      |> oaisp.with_response(201, todo()),
     oaisp.get("/todos/{id}")
       |> oaisp.with_path_param("id", param.string())
-      |> oaisp.with_response(200, types.todo_codec())
+      |> oaisp.with_response(200, todo())
       |> oaisp.with_empty_response(404, "Not found"),
   ]
 }
 ```
+
+`type_ref(module, name)` names a public type; oaisp resolves its schema from the
+package interface. A mistyped reference is caught by `oaisp lint`.
 
 ### 3. One line in `main`
 
@@ -164,22 +160,44 @@ For the `Todo` above you get:
 }
 ```
 
-Doc-comments on your types become schema `description`s automatically.
-
 ## CLI
 
 ```
-gleam run -m oaisp/cli generate [OPTIONS]
+gleam run -m oaisp/cli <command> [options]
 ```
+
+| Command | What it does |
+|---|---|
+| `generate` | Emit the OpenAPI 3.1 document. |
+| `lint` | Check the declarations: every `type_ref` resolves, every `{placeholder}` has a `with_path_param` (and vice versa), no duplicate operations. Exits non-zero on an error. |
+| `diff <old> <new>` | Report breaking changes between two OpenAPI documents (removed operations/responses/schemas/properties, newly-required params/properties). Exits non-zero on a breaking change — a CI gate. |
+| `derive` | Generate decoder + encoder functions for your public types (see below). |
+
+Options for `generate` / `lint` / `derive`:
 
 | Option | Default | Meaning |
 |---|---|---|
-| `-o, --out <PATH>` | `./openapi.json` | Output path. `-` writes to stdout (status stays on stderr, so it's pipeable: `… generate -o - \| jq`). |
+| `-o, --out <PATH>` | `generate`: `./openapi.json`; `derive`: stdout | Output path. `-` is stdout (status stays on stderr, so it's pipeable). |
 | `--package-interface <PATH>` | auto | Use an existing `package-interface.json` instead of running the export. |
 | `--quiet` | off | Suppress status output on stderr. |
 
 Writes are atomic (temp file + rename). Status goes to stderr; the exit code is
 non-zero on failure.
+
+### `derive` — optional codec generation
+
+Hand-writing decoders and encoders is boilerplate, and a hand-written one can
+drift from the type. `oaisp derive` generates them *from the same type
+structure the schema comes from*, so they can't disagree:
+
+```sh
+gleam run -m oaisp/cli derive -o src/myapp/codecs.gleam
+```
+
+This emits a module of `*_decoder()` / `*_encoder()` functions for your records
+and enums (referencing each other and your types). It's entirely optional — use
+them in your handlers if you like; oaisp's document generation never requires
+them.
 
 ## What maps to what
 
@@ -198,11 +216,11 @@ non-zero on failure.
 
 - **Soundness, not completeness.** Routes the router serves but you didn't
   declare are intentional escape hatches; they're simply absent from the doc.
-- **Schemas follow type structure.** v1 derives schemas from your types and
-  assumes your hand-written encoder matches them (field label → JSON key). Full
-  codec *generation* that guarantees this is on the roadmap (`oaisp derive`).
+- **Schemas follow type structure.** oaisp derives schemas from your types and
+  assumes your handler reads/writes them with the field labels as JSON keys. If
+  you want generated codecs that are guaranteed to match, use `oaisp derive`.
 - **Public types only.** The package interface contains only `pub` types; a
-  `type_ref` to a private type fails to resolve with a clear error.
+  `type_ref` to a private type fails to resolve — `oaisp lint` flags it.
 - **Erlang target only.**
 
 ## License
