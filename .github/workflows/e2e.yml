@@ -17,6 +17,9 @@ jobs:
         with:
           otp-version: "27"
           gleam-version: "1.16.0"
+          # mist pulls in hpack_erl, an Erlang/rebar3 dependency, so rebar3 is
+          # required to build the example (oaisp itself has no Erlang deps).
+          rebar3-version: "3"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
