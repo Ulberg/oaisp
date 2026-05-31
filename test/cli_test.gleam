@@ -46,17 +46,22 @@ pub fn build_document_rejects_bad_package_interface_test() {
 }
 
 pub fn build_document_rejects_bad_endpoints_test() {
-  assert result.is_error(cli.build_document(package_interface_json(), "not json"))
+  assert result.is_error(cli.build_document(
+    package_interface_json(),
+    "not json",
+  ))
 }
 
 pub fn build_document_rejects_unresolved_ref_test() {
   // A `type_ref` to a type the interface knows the module of but not the name
   // (a typo or a missing `pub`) is rejected, not emitted as a dangling `$ref`.
   let endpoints =
-    emit.to_string(emit.Document(info: info.info("Todo API", "1.0.0"), endpoints: [
-      endpoint.get("/todos")
-      |> endpoint.with_response(200, schema.type_ref("shop/types", "Ghost")),
-    ]))
+    emit.to_string(
+      emit.Document(info: info.info("Todo API", "1.0.0"), endpoints: [
+        endpoint.get("/todos")
+        |> endpoint.with_response(200, schema.type_ref("shop/types", "Ghost")),
+      ]),
+    )
   assert result.is_error(cli.build_document(package_interface_json(), endpoints))
 }
 
