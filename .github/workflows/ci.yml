@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          # oaisp requires OTP 27: gleam_json 3.x uses the OTP 27 `json` module.
+          otp-version: "27"
+          gleam-version: "1.16.0"
+      - run: gleam deps download
+      - run: gleam format --check src test
+      - run: gleam test

@@ -1,0 +1,18 @@
+name = "oaisp"
+version = "0.1.0"
+gleam = ">= 1.11.0"
+target = "erlang"
+licences = ["Apache-2.0"]
+description = "Code-first OpenAPI 3.1 generator for Wisp applications on the BEAM"
+repository = { type = "github", user = "ulberg", repo = "oaisp" }
+
+# gleam_json >= 3.0 uses the `json` module introduced in Erlang/OTP 27, so
+# oaisp requires OTP 27+ at runtime. See README.
+[dependencies]
+gleam_stdlib = ">= 1.0.0 and < 2.0.0"
+gleam_json = ">= 3.0.0 and < 4.0.0"
+gleam_package_interface = ">= 3.0.0 and < 4.0.0"
+argv = ">= 1.0.0 and < 2.0.0"
+
+[dev-dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"

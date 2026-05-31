@@ -1,0 +1,12 @@
+{
+  "name": "oaisp-example-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Validates the example's generated OpenAPI document and type-checks an openapi-fetch client against it.",
+  "devDependencies": {
+    "@redocly/cli": "^2.0.0",
+    "openapi-fetch": "^0.17.0",
+    "openapi-typescript": "^7.0.0",
+    "typescript": "^5.6.0"
+  }
+}

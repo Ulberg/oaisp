@@ -2,3 +2,8 @@
 *.ez
 /build
 erl_crash.dump
+
+# Local-only dependency vendoring (workaround when repo.hex.pm is unreachable).
+# The canonical dependency source is hex, declared in gleam.toml.
+/vendor
+/manifest.toml

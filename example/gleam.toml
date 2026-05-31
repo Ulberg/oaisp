@@ -1,0 +1,19 @@
+name = "example"
+version = "1.0.0"
+gleam = ">= 1.11.0"
+target = "erlang"
+
+# A runnable Wisp/mist example of using oaisp. One `routes()` list in
+# src/example/api.gleam drives both the running server (via `route.match` in
+# `api.handle`) and what `oaisp generate` projects into openapi.json.
+[dependencies]
+oaisp = { path = ".." }
+gleam_stdlib = ">= 1.0.0 and < 2.0.0"
+gleam_json = ">= 3.0.0 and < 4.0.0"
+gleam_erlang = ">= 1.0.0 and < 2.0.0"
+gleam_http = ">= 3.7.0 and < 5.0.0"
+wisp = ">= 2.0.0 and < 3.0.0"
+mist = ">= 6.0.0 and < 7.0.0"
+
+[dev-dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"
