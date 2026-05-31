@@ -1,23 +1,48 @@
 # oaisp
 
 A code-first **OpenAPI 3.1** generator for [Wisp](https://gleam.run/wisp/)
-applications on the BEAM. You write your request/response types and endpoint
-declarations as ordinary Gleam code; one CLI command emits a truthful OpenAPI
-document at build time.
+applications on the BEAM. You declare your API as a list of **routes** — each
+binding a path + method to a handler and carrying its OpenAPI annotations — and
+that single list drives both your running server *and* the emitted document. One
+CLI command writes a truthful OpenAPI 3.1 document at build time.
 
-The Gleam code is the single source of truth — the spec is a *sound projection*
-of it, derived from the compiler's own resolved type information
-(`gleam export package-interface`). No spec-first scaffolding, no runtime
-reflection, no source re-parsing.
+The schemas come from the compiler's own resolved type information
+(`gleam export package-interface`), so the document can't drift from your types.
+No spec-first scaffolding, no runtime reflection of the router, no source
+re-parsing.
 
-**Non-intrusive by design.** An endpoint points at its body/response types *by
-name*; oaisp resolves their schemas from the package interface. It never sees
-your decoders or encoders — your handlers stay entirely yours.
+## Single source of truth
+
+The thing that usually rots — the doc drifting from the routes — can't happen
+here, because there is only one list:
+
+```gleam
+import oaisp
+import oaisp/param
+import oaisp/route.{type Route, OpenApi, ResponseBody}
+
+pub fn routes() -> List(Route(Handler)) {
+  [
+    route.get("/todos/{id}", get_todo)
+      |> route.with_openapi(OpenApi(
+        ..route.openapi(),
+        summary: Some("Get a todo"),
+        tags: ["todos"],
+        path: [#("id", param.string())],
+        responses: [ResponseBody(200, oaisp.type_ref("myapp/types", "Todo"))],
+      )),
+  ]
+}
+```
+
+`route.match(routes(), method, segments)` dispatches a request to `get_todo`;
+`oaisp.add_openapi(routes(), info)` documents the same list. `Route` is generic
+in the handler — oaisp never inspects it — so oaisp has **no dependency on wisp,
+mist, or any server library**.
 
 ## Requirements
 
-- **Erlang/OTP 27+** — oaisp depends on `gleam_json` 3.x, which uses the `json`
-  module introduced in OTP 27.
+- **Erlang/OTP 27+** — `gleam_json` 3.x uses the OTP 27 `json` module.
 - **Gleam 1.11+**.
 
 ## How it works
@@ -25,22 +50,22 @@ your decoders or encoders — your handlers stay entirely yours.
 ```
 your Gleam types ──► gleam export package-interface ─┐
                                                       ├──► oaisp/cli merge ──► openapi.json
-your endpoint declarations ──► --emit-endpoints ──────┘
+your routes()    ──► --emit-endpoints ────────────────┘
 ```
 
-1. You declare endpoints (method, path, params, body, responses) as values. The
-   body and each response refer to a type by name with `type_ref`.
-2. `oaisp.add_openapi` is a one-line hook in your `main`. At runtime it does
-   nothing but peek `argv`; under `--emit-endpoints` it dumps the declarations
-   and exits.
+1. You write `routes()` — each route binds a handler and carries an `OpenApi`
+   annotation (request/response **types** by reference, params, summary, tags).
+2. You dispatch with `route.match` and wire `oaisp.add_openapi(routes(), info)`
+   into your `main` (a one-line, generic pass-through; under `--emit-endpoints`
+   it prints the declarations and exits).
 3. `gleam run -m oaisp/cli generate` runs the package-interface export, collects
    the declarations, resolves every `type_ref` against the resolved type
    information, and writes `openapi.json`.
 
-The router stays hand-written — oaisp never owns it. **Soundness over
-completeness:** the document never claims something the server won't honor, but
-it may under-describe (an undeclared route, or a type whose JSON shape oaisp
-can't derive, is simply left out or described permissively).
+**Soundness over completeness:** the document never claims something the server
+won't honor. Routes you don't put in `routes()` (streaming, websockets, …) are
+served by your fallback and simply left undocumented; a type whose JSON shape
+oaisp can't derive is described permissively.
 
 ## Quickstart
 
@@ -48,116 +73,66 @@ can't derive, is simply left out or described permissively).
 
 ```gleam
 // src/myapp/types.gleam
-
-/// A todo item.
 pub type Todo {
   Todo(id: String, title: String, done: Bool)
 }
-
-/// Fields for creating a todo.
-pub type NewTodo {
-  NewTodo(title: String)
-}
 ```
 
-No oaisp wrappers, no required codec. Doc-comments become schema descriptions.
+Doc-comments on types become schema descriptions.
 
-### 2. Declare endpoints
+### 2. Bind routes to handlers, annotate them
 
 ```gleam
-// src/myapp/endpoints.gleam
-import myapp/types
+// src/myapp/api.gleam
+import gleam/http
+import gleam/string
 import oaisp
-import oaisp/param
+import oaisp/route.{type Route, OpenApi, ResponseBody}
+import wisp
 
-// A tiny helper keeps the type references tidy.
-fn todo() -> oaisp.Schema {
-  oaisp.type_ref("myapp/types", "Todo")
-}
+pub type Handler =
+  fn(wisp.Request, List(#(String, String))) -> wisp.Response
 
-pub fn all() -> List(oaisp.Endpoint) {
+pub fn routes() -> List(Route(Handler)) {
   [
-    oaisp.get("/todos")
-      |> oaisp.with_response(200, todo())
-      |> oaisp.with_summary("List all todos"),
-    oaisp.post("/todos")
-      |> oaisp.with_body(oaisp.type_ref("myapp/types", "NewTodo"))
-      |> oaisp.with_response(201, todo()),
-    oaisp.get("/todos/{id}")
-      |> oaisp.with_path_param("id", param.string())
-      |> oaisp.with_response(200, todo())
-      |> oaisp.with_empty_response(404, "Not found"),
+    route.get("/todos/{id}", get_todo)
+      |> route.with_openapi(OpenApi(
+        ..route.openapi(),
+        path: [#("id", param.string())],
+        responses: [ResponseBody(200, oaisp.type_ref("myapp/types", "Todo"))],
+      )),
   ]
 }
-```
 
-`type_ref(module, name)` names a public type; oaisp resolves its schema from the
-package interface. A mistyped reference is caught by `oaisp lint`.
+pub fn handle(req: wisp.Request) -> wisp.Response {
+  let method = string.lowercase(http.method_to_string(req.method))
+  case route.match(routes(), method, wisp.path_segments(req)) {
+    Ok(route.Matched(handler, params)) -> handler(req, params)
+    Error(Nil) -> wisp.not_found()
+  }
+}
 
-### 3. One line in `main`
-
-```gleam
-import myapp/endpoints
-import oaisp
-
-pub fn main() {
-  let info = oaisp.info("Todo API", "1.0.0")
-  let assert Ok(_) =
-    wisp_mist.handler(router.handle_request, secret_key_base)
-    |> mist.new
-    |> oaisp.add_openapi(endpoints.all(), info)
-    // ^ the addition
-    |> mist.port(8080)
-    |> mist.start
-  process.sleep_forever()
+fn get_todo(_req, params) -> wisp.Response {
+  // … build and return a Todo response …
 }
 ```
 
-`add_openapi` is generic in the builder and only passes it through, so it works
-with mist (or anything) and adds **no dependency on a server library** — and no
-runtime cost beyond a single `argv` peek.
+### 3. One pipeline in `main`
+
+```gleam
+wisp_mist.handler(api.handle, secret_key_base)
+|> mist.new
+|> oaisp.add_openapi(api.routes(), info)
+|> mist.port(8080)
+|> mist.start
+```
+
+`add_openapi` adds nothing at runtime beyond an `argv` peek at startup.
 
 ### 4. Generate
 
 ```sh
 gleam run -m oaisp/cli generate        # → ./openapi.json
-```
-
-For the `Todo` above you get:
-
-```jsonc
-{
-  "openapi": "3.1.0",
-  "info": { "title": "Todo API", "version": "1.0.0" },
-  "paths": {
-    "/todos/{id}": {
-      "get": {
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
-        ],
-        "responses": {
-          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Todo" } } } },
-          "404": { "description": "Not found" }
-        }
-      }
-    }
-    // …
-  },
-  "components": {
-    "schemas": {
-      "Todo": {
-        "description": "A todo item.",
-        "type": "object",
-        "properties": {
-          "id": { "type": "string" },
-          "title": { "type": "string" },
-          "done": { "type": "boolean" }
-        },
-        "required": ["id", "title", "done"]
-      }
-    }
-  }
-}
 ```
 
 ## CLI
@@ -169,35 +144,12 @@ gleam run -m oaisp/cli <command> [options]
 | Command | What it does |
 |---|---|
 | `generate` | Emit the OpenAPI 3.1 document. |
-| `lint` | Check the declarations: every `type_ref` resolves, every `{placeholder}` has a `with_path_param` (and vice versa), no duplicate operations. Exits non-zero on an error. |
-| `diff <old> <new>` | Report breaking changes between two OpenAPI documents (removed operations/responses/schemas/properties, newly-required params/properties). Exits non-zero on a breaking change — a CI gate. |
-| `derive` | Generate decoder + encoder functions for your public types (see below). |
+| `lint` | Check declarations: `type_ref` existence, `{placeholder}` ↔ path params, duplicate operations. Non-zero on error. |
+| `diff <old> <new>` | Report breaking changes between two documents (a CI gate). |
+| `derive` | Generate decoder + encoder functions for your public types. |
 
-Options for `generate` / `lint` / `derive`:
-
-| Option | Default | Meaning |
-|---|---|---|
-| `-o, --out <PATH>` | `generate`: `./openapi.json`; `derive`: stdout | Output path. `-` is stdout (status stays on stderr, so it's pipeable). |
-| `--package-interface <PATH>` | auto | Use an existing `package-interface.json` instead of running the export. |
-| `--quiet` | off | Suppress status output on stderr. |
-
-Writes are atomic (temp file + rename). Status goes to stderr; the exit code is
-non-zero on failure.
-
-### `derive` — optional codec generation
-
-Hand-writing decoders and encoders is boilerplate, and a hand-written one can
-drift from the type. `oaisp derive` generates them *from the same type
-structure the schema comes from*, so they can't disagree:
-
-```sh
-gleam run -m oaisp/cli derive -o src/myapp/codecs.gleam
-```
-
-This emits a module of `*_decoder()` / `*_encoder()` functions for your records
-and enums (referencing each other and your types). It's entirely optional — use
-them in your handlers if you like; oaisp's document generation never requires
-them.
+Options: `-o, --out <PATH>` (`-` for stdout), `--package-interface <PATH>`,
+`--quiet`. Writes are atomic; status goes to stderr.
 
 ## What maps to what
 
@@ -214,25 +166,22 @@ them.
 
 ## Caveats
 
-- **Soundness, not completeness.** Routes the router serves but you didn't
-  declare are intentional escape hatches; they're simply absent from the doc.
-- **Schemas follow type structure.** oaisp derives schemas from your types and
-  assumes your handler reads/writes them with the field labels as JSON keys. If
-  you want generated codecs that are guaranteed to match, use `oaisp derive`.
-- **Public types only.** The package interface contains only `pub` types; a
-  `type_ref` to a private type fails to resolve — `oaisp lint` flags it.
+- **Soundness, not completeness.** Undeclared routes are served by your fallback
+  and left out of the doc; that's intentional (streaming, websockets, …).
+- **Schemas follow type structure** — oaisp assumes your handler reads/writes a
+  type with its field labels as JSON keys. For guaranteed-matching codecs, use
+  `oaisp derive`.
+- **Public types only.** A `type_ref` to a private type fails to resolve —
+  `oaisp lint` flags it.
 - **Erlang target only.**
 
 ## Example
 
-A complete example lives in [`example/`](example/) — a Todo API exercising every
-shape oaisp models (scalars, `List`, `Option`, `Dict`, nested records, enums,
-path/query params, request bodies, several response codes across all methods).
-Its end-to-end check ([`example/e2e/`](example/e2e/)) **generates** the document,
-**validates** it as OpenAPI 3.1 with [redocly](https://github.com/Redocly/redocly-cli),
-and **type-checks** an [`openapi-fetch`](https://openapi-ts.dev/openapi-fetch/)
-client generated from it — so the document is proven both valid and faithfully
-consumable. It runs in CI ([`.github/workflows/e2e.yml`](.github/workflows/e2e.yml)).
+A complete Wisp/mist Todo API is in [`example/`](example/), exercising every
+shape oaisp models. Its end-to-end check ([`example/e2e/`](example/e2e/))
+generates the document, validates it as OpenAPI 3.1 with redocly, type-checks an
+`openapi-fetch` client against it, and runs that client against the live server —
+all in CI ([`.github/workflows/e2e.yml`](.github/workflows/e2e.yml)).
 
 ## License
 
