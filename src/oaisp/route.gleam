@@ -149,6 +149,95 @@ fn apply_response(endpoint: Endpoint, response: ResponseSpec) -> Endpoint {
   }
 }
 
+// --- simple path: pipeable modifiers -----------------------------------------
+//
+// The [`OpenApi`](#OpenApi) record above is the advanced path: set every
+// annotation at once. For simpler endpoints, pipe these one-concern modifiers
+// onto the route instead — no record, no `Some` wrapping, no extra imports, and
+// it reads as a flat pipe. Both styles drive the same underlying endpoint, so
+// they are interchangeable and can be mixed on the same route.
+
+/// Set the one-line summary.
+pub fn summary(route: Route(handler), summary: String) -> Route(handler) {
+  modify(route, endpoint.with_summary(_, summary))
+}
+
+/// Set the longer description.
+pub fn description(
+  route: Route(handler),
+  description: String,
+) -> Route(handler) {
+  modify(route, endpoint.with_description(_, description))
+}
+
+/// Set the operation id.
+pub fn operation_id(
+  route: Route(handler),
+  operation_id: String,
+) -> Route(handler) {
+  modify(route, endpoint.with_operation_id(_, operation_id))
+}
+
+/// Tag the operation, for grouping in the document.
+pub fn tags(route: Route(handler), tags: List(String)) -> Route(handler) {
+  modify(route, fn(ep) { list.fold(tags, ep, endpoint.with_tag) })
+}
+
+/// Document a `{name}` path parameter with `schema` — always required.
+pub fn path_param(
+  route: Route(handler),
+  name: String,
+  schema: Schema,
+) -> Route(handler) {
+  modify(route, endpoint.with_path_param(_, name, schema))
+}
+
+/// Document a query parameter.
+pub fn query_param(
+  route: Route(handler),
+  name: String,
+  schema: Schema,
+  required: Bool,
+) -> Route(handler) {
+  modify(route, endpoint.with_query_param(_, name, schema, required))
+}
+
+/// Reflect each scalar field of `schema` (a record type) into a query
+/// parameter — the equivalent of F#'s `addQueryParameters<'T>`.
+pub fn query_record(route: Route(handler), schema: Schema) -> Route(handler) {
+  modify(route, endpoint.with_query_record(_, schema))
+}
+
+/// Document the request body type.
+pub fn accepts(route: Route(handler), schema: Schema) -> Route(handler) {
+  modify(route, endpoint.with_body(_, schema))
+}
+
+/// Document a response body for `status`.
+pub fn returns(
+  route: Route(handler),
+  status: Int,
+  schema: Schema,
+) -> Route(handler) {
+  modify(route, endpoint.with_response(_, status, schema))
+}
+
+/// Document an empty response for `status`, with a description.
+pub fn returns_empty(
+  route: Route(handler),
+  status: Int,
+  description: String,
+) -> Route(handler) {
+  modify(route, endpoint.with_empty_response(_, status, description))
+}
+
+fn modify(
+  route: Route(handler),
+  with: fn(Endpoint) -> Endpoint,
+) -> Route(handler) {
+  Route(..route, endpoint: with(route.endpoint))
+}
+
 /// The documented endpoints behind these routes — the input to the document
 /// generator. Drops the handlers.
 pub fn to_endpoints(routes: List(Route(handler))) -> List(Endpoint) {

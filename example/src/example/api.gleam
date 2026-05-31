@@ -2,7 +2,9 @@
 //// server (via [`handle`](#handle), which dispatches with `route.match`) and
 //// the generated OpenAPI document (via `oaisp.add_openapi`) — so the wire
 //// behaviour and the spec can't drift. Each route binds a path + method to a
-//// handler and carries its annotations in a single `OpenApi` record.
+//// handler and carries its OpenAPI annotations — set either with the `OpenApi`
+//// record (the `/todos` routes) or with pipeable modifiers (the `/{id}`
+//// routes); the two styles are interchangeable.
 
 import gleam/http
 import gleam/json.{type Json}
@@ -11,7 +13,7 @@ import gleam/option.{Some}
 import gleam/string
 import oaisp
 import oaisp/param
-import oaisp/route.{type Route, EmptyResponse, OpenApi, ResponseBody}
+import oaisp/route.{type Route, OpenApi, ResponseBody}
 import wisp
 
 /// A handler receives the request and the path parameters the route captured.
@@ -24,6 +26,8 @@ fn ref(name: String) -> oaisp.Schema {
 
 pub fn routes() -> List(Route(Handler)) {
   [
+    // The `/todos` collection routes use the advanced path: the `OpenApi` record
+    // sets every annotation at once — handy when there are several.
     route.get("/todos", list_todos)
       |> route.with_openapi(
         OpenApi(
@@ -52,63 +56,37 @@ pub fn routes() -> List(Route(Handler)) {
           ],
         ),
       ),
+    // The `/{id}` routes use the simple path: pipeable modifiers instead of the
+    // `OpenApi` record. Same result, less ceremony — no record, no `Some`.
     route.get("/todos/{id}", get_todo)
-      |> route.with_openapi(
-        OpenApi(
-          ..route.openapi(),
-          summary: Some("Get a todo by id"),
-          operation_id: Some("getTodo"),
-          tags: ["todos"],
-          path: [#("id", param.string())],
-          responses: [
-            ResponseBody(200, ref("Todo")),
-            ResponseBody(404, ref("ApiError")),
-          ],
-        ),
-      ),
+      |> route.summary("Get a todo by id")
+      |> route.operation_id("getTodo")
+      |> route.tags(["todos"])
+      |> route.path_param("id", param.string())
+      |> route.returns(200, ref("Todo"))
+      |> route.returns(404, ref("ApiError")),
     route.put("/todos/{id}", replace_todo)
-      |> route.with_openapi(
-        OpenApi(
-          ..route.openapi(),
-          summary: Some("Replace a todo"),
-          operation_id: Some("replaceTodo"),
-          tags: ["todos"],
-          path: [#("id", param.string())],
-          request_body: Some(ref("Todo")),
-          responses: [
-            ResponseBody(200, ref("Todo")),
-            ResponseBody(404, ref("ApiError")),
-          ],
-        ),
-      ),
+      |> route.summary("Replace a todo")
+      |> route.operation_id("replaceTodo")
+      |> route.tags(["todos"])
+      |> route.path_param("id", param.string())
+      |> route.accepts(ref("Todo"))
+      |> route.returns(200, ref("Todo"))
+      |> route.returns(404, ref("ApiError")),
     route.delete("/todos/{id}", delete_todo)
-      |> route.with_openapi(
-        OpenApi(
-          ..route.openapi(),
-          summary: Some("Delete a todo"),
-          operation_id: Some("deleteTodo"),
-          tags: ["todos"],
-          path: [#("id", param.string())],
-          responses: [
-            EmptyResponse(204, "Deleted"),
-            ResponseBody(404, ref("ApiError")),
-          ],
-        ),
-      ),
+      |> route.summary("Delete a todo")
+      |> route.operation_id("deleteTodo")
+      |> route.tags(["todos"])
+      |> route.path_param("id", param.string())
+      |> route.returns_empty(204, "Deleted")
+      |> route.returns(404, ref("ApiError")),
     route.get("/users/{id}", get_user)
-      |> route.with_openapi(
-        OpenApi(
-          ..route.openapi(),
-          summary: Some("Get a user by id"),
-          operation_id: Some("getUser"),
-          tags: ["users"],
-          path: [#("id", param.string())],
-          responses: [
-            ResponseBody(200, ref("User")),
-            ResponseBody(404, ref("ApiError")),
-          ],
-        ),
-      ),
+      |> route.summary("Get a user by id")
+      |> route.operation_id("getUser")
+      |> route.tags(["users"])
+      |> route.path_param("id", param.string())
+      |> route.returns(200, ref("User"))
+      |> route.returns(404, ref("ApiError")),
   ]
 }
 

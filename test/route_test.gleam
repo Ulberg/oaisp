@@ -67,3 +67,42 @@ pub fn with_openapi_carries_query_record_test() {
   assert endpoint.query_record(e)
     == Some(schema.type_ref("myapp/types", "TodoQuery"))
 }
+
+pub fn simple_path_matches_advanced_path_test() {
+  // The simple (pipeable) modifiers and the advanced (`OpenApi` record) path
+  // delegate to the same endpoint builders, so they must produce the identical
+  // endpoint. Exercises every modifier.
+  let simple =
+    route.get("/todos/{id}", "h")
+    |> route.summary("Get a todo")
+    |> route.description("Fetch one todo by id")
+    |> route.operation_id("getTodo")
+    |> route.tags(["todos"])
+    |> route.path_param("id", param.string())
+    |> route.query_param("verbose", param.string(), False)
+    |> route.query_record(schema.type_ref("myapp/types", "TodoQuery"))
+    |> route.accepts(schema.type_ref("myapp/types", "NewTodo"))
+    |> route.returns(200, schema.type_ref("myapp/types", "Todo"))
+    |> route.returns_empty(404, "Not found")
+
+  let advanced =
+    route.get("/todos/{id}", "h")
+    |> route.with_openapi(
+      OpenApi(
+        summary: Some("Get a todo"),
+        description: Some("Fetch one todo by id"),
+        operation_id: Some("getTodo"),
+        tags: ["todos"],
+        path: [#("id", param.string())],
+        query: [route.QueryParam("verbose", param.string(), False)],
+        query_record: Some(schema.type_ref("myapp/types", "TodoQuery")),
+        request_body: Some(schema.type_ref("myapp/types", "NewTodo")),
+        responses: [
+          ResponseBody(200, schema.type_ref("myapp/types", "Todo")),
+          EmptyResponse(404, "Not found"),
+        ],
+      ),
+    )
+
+  assert route.to_endpoints([simple]) == route.to_endpoints([advanced])
+}
