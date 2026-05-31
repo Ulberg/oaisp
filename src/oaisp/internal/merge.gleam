@@ -351,6 +351,23 @@ fn seed_refs(endpoints: List(Endpoint)) -> List(#(String, String)) {
   list.flat_map(endpoints, endpoint.type_refs)
 }
 
+/// Seed references that name a type in a module the interface knows, but where
+/// no such type exists — almost certainly a typo or a missing `pub`. A reference
+/// to a module the interface doesn't know (an external dependency) is
+/// intentionally under-described as `{}`, so it is not reported.
+pub fn unresolved_refs(
+  endpoints: List(Endpoint),
+  package: pkg.Package,
+) -> List(#(String, String)) {
+  seed_refs(endpoints)
+  |> list.unique
+  |> list.filter(fn(ref) {
+    let #(module, name) = ref
+    pkg.knows_module(package, module)
+    && result.is_error(pkg.resolve_type(package, module, name))
+  })
+}
+
 // --- schema (Oas) intermediate -----------------------------------------------
 
 /// A JSON Schema node, built structurally so nullability and `anyOf` can be

@@ -11,8 +11,10 @@
 import argv
 import gleam/int
 import gleam/io
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import gleam/string
 import oaisp/internal/argv as cli_args
 import oaisp/internal/atomic_write
 import oaisp/internal/emit
@@ -94,7 +96,22 @@ pub fn build_document(
     package_interface_json,
     endpoints_json,
   ))
-  Ok(merge.to_string(document.endpoints, document.info, package))
+  case merge.unresolved_refs(document.endpoints, package) {
+    [] -> Ok(merge.to_string(document.endpoints, document.info, package))
+    refs -> Error(unresolved_refs_message(refs))
+  }
+}
+
+/// A `type_ref` that doesn't resolve would leave a dangling `$ref` in the
+/// document. List the offenders so the typo — or the missing `pub` — is obvious.
+fn unresolved_refs_message(refs: List(#(String, String))) -> String {
+  let bullets =
+    refs
+    |> list.map(fn(ref) { "  - " <> ref.0 <> "." <> ref.1 })
+    |> string.join("\n")
+  "these type references don't resolve against the package interface — check the "
+  <> "module path and name, and that the type is public:\n"
+  <> bullets
 }
 
 // --- shared pipeline ---------------------------------------------------------

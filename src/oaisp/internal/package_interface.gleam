@@ -114,6 +114,14 @@ pub fn resolve_type(
   classify(definition)
 }
 
+/// Whether the interface includes this module — i.e. it is one of the current
+/// package's own modules, not an external dependency. Lets a typo'd reference
+/// (known module, unknown type) be told apart from an intentional dependency
+/// reference (unknown module), which is under-described rather than reported.
+pub fn knows_module(package: Package, module: String) -> Bool {
+  dict.has_key(package.modules, module)
+}
+
 fn classify(definition: pi.TypeDefinition) -> ResolvedType {
   // The doc comment is two things at once: prose (the schema description) and
   // any `@format` directives. Parse it once, then hand each part to the side
