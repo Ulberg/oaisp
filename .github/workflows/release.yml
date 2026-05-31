@@ -1,0 +1,34 @@
+name: Release
+
+# Publishes oaisp to Hex when a version tag is pushed, e.g.
+#   git tag v0.1.0 && git push origin v0.1.0
+# The tag should match the `version` in gleam.toml. The Hex API key is stored
+# as the repository secret `HEX_KEY` and passed to `gleam publish` via the
+# `HEXPM_API_KEY` environment variable it reads.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          # oaisp requires OTP 27: gleam_json 3.x uses the OTP 27 `json` module.
+          otp-version: "27"
+          gleam-version: "1.16.0"
+      - run: gleam deps download
+      # Gate the publish on a green build and test run, so a broken tag can
+      # never reach Hex.
+      - run: gleam format --check src test
+      - run: gleam test
+      - run: gleam publish --yes
+        env:
+          HEXPM_API_KEY: ${{ secrets.HEX_KEY }}
