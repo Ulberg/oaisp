@@ -421,8 +421,12 @@ fn ref_or_any(name: String, resolvable: Set(String)) -> Oas {
 fn oas_to_json(oas: Oas) -> Json {
   case oas {
     OString -> typed("string")
+    // Gleam `Int` is arbitrary precision (a BEAM bignum), so it is neither
+    // `int32` nor `int64`; attaching such a `format` would claim a bound the
+    // value does not honour. Plain `integer` is the sound description.
     OInteger -> typed("integer")
-    ONumber -> typed("number")
+    // Gleam `Float` is an IEEE-754 double on the BEAM, so `double` is exact.
+    ONumber -> number_schema()
     OBoolean -> typed("boolean")
     ONull -> typed("null")
     OArray(items:) ->
@@ -456,6 +460,13 @@ fn oas_to_json(oas: Oas) -> Json {
 
 fn typed(name: String) -> Json {
   json.object([#("type", json.string(name))])
+}
+
+fn number_schema() -> Json {
+  json.object([
+    #("type", json.string("number")),
+    #("format", json.string("double")),
+  ])
 }
 
 fn object_to_json(
@@ -498,7 +509,11 @@ fn nullable_to_json(inner: Oas) -> Json {
   case inner {
     OString -> type_array(["string", "null"])
     OInteger -> type_array(["integer", "null"])
-    ONumber -> type_array(["number", "null"])
+    ONumber ->
+      json.object([
+        #("type", json.array(["number", "null"], json.string)),
+        #("format", json.string("double")),
+      ])
     OBoolean -> type_array(["boolean", "null"])
     ONull -> typed("null")
     other ->

@@ -110,6 +110,26 @@ pub fn record_schema_test() {
     == Ok("integer")
 }
 
+pub fn float_format_test() {
+  // Gleam Float is an IEEE-754 double on the BEAM, so it carries format double.
+  assert at(
+      ["components", "schemas", "Todo", "properties", "score", "type"],
+      decode.string,
+    )
+    == Ok("number")
+  assert at(
+      ["components", "schemas", "Todo", "properties", "score", "format"],
+      decode.string,
+    )
+    == Ok("double")
+  // Int is arbitrary precision, so it carries no (int32/int64) format.
+  let assert Error(_) =
+    at(
+      ["components", "schemas", "Todo", "properties", "rank", "format"],
+      decode.string,
+    )
+}
+
 pub fn nullable_option_field_test() {
   // An Option(String) field is not required and its type allows null.
   assert at(

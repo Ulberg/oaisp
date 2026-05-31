@@ -164,6 +164,11 @@ Options: `-o, --out <PATH>` (`-` for stdout), `--package-interface <PATH>`,
 | reference to another public type | `$ref` (collected transitively) |
 | opaque type, generic, or union with payloads | permissively under-described |
 
+`Float` additionally carries `format: double` (it is an IEEE-754 double on the
+BEAM). `Int` is intentionally left without an `int32`/`int64` format: a Gleam
+`Int` is an arbitrary-precision bignum, so claiming a fixed width would be
+unsound.
+
 ## Caveats
 
 - **Soundness, not completeness.** Undeclared routes are served by your fallback
