@@ -1,10 +1,12 @@
 name: Release
 
 # Publishes oaisp to Hex when a version tag is pushed, e.g.
-#   git tag v0.1.0 && git push origin v0.1.0
-# The tag should match the `version` in gleam.toml. The Hex API key is stored
-# as the repository secret `HEX_KEY` and passed to `gleam publish` via the
-# `HEXPM_API_KEY` environment variable it reads.
+#   git tag v1.0.0 && git push origin v1.0.0
+# The published version comes from `gleam.toml`, NOT the tag — the tag only
+# triggers this workflow. The check below fails fast if the two disagree, so a
+# tag can never publish a different version than the manifest declares. The Hex
+# API key is stored as the repository secret `HEX_KEY` and passed to
+# `gleam publish` via the `HEXPM_API_KEY` environment variable it reads.
 
 on:
   push:
@@ -29,6 +31,17 @@ jobs:
       # never reach Hex.
       - run: gleam format --check src test
       - run: gleam test
+      # The tag (e.g. v1.0.0) must match `version` in gleam.toml, since that is
+      # what actually gets published. Fail loudly on a mismatch.
+      - name: Check tag matches gleam.toml version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest="$(grep -m1 '^version' gleam.toml | sed -E 's/.*"(.*)".*/\1/')"
+          if [ "$tag" != "$manifest" ]; then
+            echo "::error::tag v$tag does not match gleam.toml version $manifest"
+            exit 1
+          fi
+          echo "tag and gleam.toml agree on $manifest"
       - run: gleam publish --yes
         env:
           HEXPM_API_KEY: ${{ secrets.HEX_KEY }}

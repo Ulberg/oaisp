@@ -1,5 +1,5 @@
 name = "oaisp"
-version = "0.1.0"
+version = "1.0.0"
 gleam = ">= 1.11.0"
 target = "erlang"
 licences = ["Apache-2.0"]
