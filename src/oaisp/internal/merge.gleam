@@ -225,6 +225,7 @@ fn query_scalar_oas(field_type: pkg.FieldType) -> Result(Oas, Nil) {
         Ok(inner) -> Ok(OArray(inner))
         Error(Nil) -> Error(Nil)
       }
+    pkg.TimestampType -> Ok(OStringFormat("date-time"))
     _ -> Error(Nil)
   }
 }
@@ -415,6 +416,9 @@ type Oas {
   ORef(name: String)
   ONullable(inner: Oas)
   OAny(description: Option(String))
+  /// A `string` carrying an OpenAPI `format` (e.g. `date-time`). Kept general so
+  /// further type-driven formats can map here without a new variant.
+  OStringFormat(format: String)
 }
 
 fn resolved_oas(resolved: pkg.ResolvedType, resolvable: Set(String)) -> Oas {
@@ -451,6 +455,7 @@ fn field_oas(field_type: pkg.FieldType, resolvable: Set(String)) -> Oas {
     pkg.DictType(value) -> OMap(field_oas(value, resolvable))
     pkg.TupleType(elements) ->
       OTuple(list.map(elements, field_oas(_, resolvable)))
+    pkg.TimestampType -> OStringFormat("date-time")
     pkg.RefType(_module, name) -> ref_or_any(name, resolvable)
     pkg.AnyType -> OAny(None)
   }
@@ -528,7 +533,15 @@ fn oas_to_json(oas: Oas) -> Json {
         None -> json.object([])
         Some(text) -> json.object([#("description", json.string(text))])
       }
+    OStringFormat(format:) -> string_format_schema(format)
   }
+}
+
+fn string_format_schema(format: String) -> Json {
+  json.object([
+    #("type", json.string("string")),
+    #("format", json.string(format)),
+  ])
 }
 
 fn typed(name: String) -> Json {
@@ -589,6 +602,11 @@ fn nullable_to_json(inner: Oas) -> Json {
       ])
     OBoolean -> type_array(["boolean", "null"])
     ONull -> typed("null")
+    OStringFormat(format:) ->
+      json.object([
+        #("type", json.array(["string", "null"], json.string)),
+        #("format", json.string(format)),
+      ])
     other ->
       json.object([
         #("anyOf", json.preprocessed_array([oas_to_json(other), typed("null")])),

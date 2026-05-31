@@ -19,7 +19,7 @@ import gleam/string
 import oaisp/internal/package_interface.{
   type FieldType, type ResolvedType, AnyType, BoolType, DictType, EnumType,
   FloatType, IntType, ListType, NilType, OptionType, RecordType, RefType,
-  StringType, TupleType, Unmodelled,
+  StringType, TimestampType, TupleType, Unmodelled,
 } as pkg
 
 /// Generate a Gleam module of decoders and encoders for `package`'s public
@@ -107,8 +107,9 @@ fn field_derivable(field_type: FieldType, current: Set(String)) -> Bool {
     OptionType(inner) -> field_derivable(inner, current)
     DictType(value) -> field_derivable(value, current)
     RefType(_module, name) -> set.contains(current, name)
-    // Tuples have no general json codec, and AnyType is unknown by definition.
-    TupleType(..) | AnyType -> False
+    // Tuples have no general json codec, AnyType is unknown by definition, and a
+    // Timestamp's codec lives in `gleam_time` — oaisp won't synthesise one.
+    TupleType(..) | AnyType | TimestampType -> False
   }
 }
 
@@ -260,7 +261,7 @@ fn decoder_expr(field_type: FieldType) -> String {
     DictType(value) ->
       "decode.dict(decode.string, " <> decoder_expr(value) <> ")"
     RefType(_module, name) -> snake_case(name) <> "_decoder()"
-    TupleType(..) | AnyType ->
+    TupleType(..) | AnyType | TimestampType ->
       panic as "non-derivable field type reached generation"
   }
 }
@@ -294,7 +295,7 @@ fn encoder_fn(field_type: FieldType) -> String {
       <> encoder_fn(inner)
       <> ") }"
     RefType(_module, name) -> snake_case(name) <> "_encoder"
-    TupleType(..) | AnyType ->
+    TupleType(..) | AnyType | TimestampType ->
       panic as "non-derivable field type reached generation"
   }
 }

@@ -66,6 +66,11 @@ pub type FieldType {
   OptionType(inner: FieldType)
   DictType(value: FieldType)
   TupleType(elements: List(FieldType))
+  /// The standard `gleam/time/timestamp.Timestamp`, rendered as an RFC 3339
+  /// `string` with `format: date-time`. Recognised by name in the package
+  /// interface, so oaisp takes no dependency on `gleam_time` and never forces an
+  /// oaisp-owned type onto consumers.
+  TimestampType
   /// A reference to another named type, resolved transitively by merge into a
   /// `$ref`. References merge cannot resolve (dependency types absent from this
   /// package's interface) are soundly treated as [`AnyType`](#FieldType).
@@ -194,6 +199,7 @@ fn named_type(
     "gleam_stdlib", "gleam/option", "Option" ->
       OptionType(nth_type(parameters, 0))
     "gleam_stdlib", "gleam/dict", "Dict" -> DictType(nth_type(parameters, 1))
+    "gleam_time", "gleam/time/timestamp", "Timestamp" -> TimestampType
     _, _, _ -> RefType(module:, name:)
   }
 }

@@ -161,6 +161,7 @@ Options: `-o, --out <PATH>` (`-` for stdout), `--package-interface <PATH>`,
 | `Dict(String, V)` | `object` with `additionalProperties: V` |
 | union of fieldless variants | `string` `enum` |
 | `String` / `Int` / `Float` / `Bool` | `string` / `integer` / `number` / `boolean` |
+| `gleam/time/timestamp.Timestamp` | `string`, `format: date-time` (RFC 3339) |
 | reference to another public type | `$ref` (collected transitively) |
 | opaque type, generic, or union with payloads | permissively under-described |
 
@@ -168,6 +169,12 @@ Options: `-o, --out <PATH>` (`-` for stdout), `--package-interface <PATH>`,
 BEAM). `Int` is intentionally left without an `int32`/`int64` format: a Gleam
 `Int` is an arbitrary-precision bignum, so claiming a fixed width would be
 unsound.
+
+String `format`s are type-driven: a `gleam/time/timestamp.Timestamp` field
+becomes `format: date-time`. oaisp recognises it by name in the package interface
+and takes no dependency on `gleam_time`, so the format rides on the standard type
+without forcing an oaisp-owned type on you — the same way the F# generator derives
+`date-time` from `DateTimeOffset`.
 
 ## Query parameters
 
