@@ -95,18 +95,23 @@ pub type Handler =
 
 pub fn routes() -> List(Route(Handler)) {
   [
-    // Advanced: the `OpenApi` record sets every annotation at once.
+    // Simple: `documented` sets summary, tags, path, and responses in one call.
     route.get("/todos/{id}", get_todo)
-      |> route.with_openapi(OpenApi(
-        ..route.openapi(),
+      |> route.documented(
+        summary: "Get a todo by id",
+        tags: ["todos"],
         path: [#("id", param.string())],
         responses: [ResponseBody(200, oaisp.type_ref("myapp/types", "Todo"))],
+      ),
+    // Full: the `OpenApi` record carries the rest — request body, query record,
+    // operationId, description.
+    route.post("/todos", create_todo)
+      |> route.with_openapi(OpenApi(
+        ..route.openapi(),
+        summary: Some("Create a todo"),
+        request_body: Some(oaisp.type_ref("myapp/types", "NewTodo")),
+        responses: [ResponseBody(201, oaisp.type_ref("myapp/types", "Todo"))],
       )),
-    // Simple: pipe one-concern modifiers — no record, no `Some`. Both styles
-    // build the same endpoint, so you can mix them.
-    route.get("/todos", list_todos)
-      |> route.summary("List todos")
-      |> route.returns(200, oaisp.type_ref("myapp/types", "TodoPage")),
   ]
 }
 

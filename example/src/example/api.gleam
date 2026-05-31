@@ -13,7 +13,7 @@ import gleam/option.{Some}
 import gleam/string
 import oaisp
 import oaisp/param
-import oaisp/route.{type Route, OpenApi, ResponseBody}
+import oaisp/route.{type Route, EmptyResponse, OpenApi, ResponseBody}
 import wisp
 
 /// A handler receives the request and the path parameters the route captured.
@@ -26,8 +26,8 @@ fn ref(name: String) -> oaisp.Schema {
 
 pub fn routes() -> List(Route(Handler)) {
   [
-    // The `/todos` collection routes use the advanced path: the `OpenApi` record
-    // sets every annotation at once — handy when there are several.
+    // Routes with a query record, a request body, or an `operationId` use the
+    // full `OpenApi` record — it carries every annotation at once.
     route.get("/todos", list_todos)
       |> route.with_openapi(
         OpenApi(
@@ -56,37 +56,55 @@ pub fn routes() -> List(Route(Handler)) {
           ],
         ),
       ),
-    // The `/{id}` routes use the simple path: pipeable modifiers instead of the
-    // `OpenApi` record. Same result, less ceremony — no record, no `Some`.
-    route.get("/todos/{id}", get_todo)
-      |> route.summary("Get a todo by id")
-      |> route.operation_id("getTodo")
-      |> route.tags(["todos"])
-      |> route.path_param("id", param.string())
-      |> route.returns(200, ref("Todo"))
-      |> route.returns(404, ref("ApiError")),
     route.put("/todos/{id}", replace_todo)
-      |> route.summary("Replace a todo")
-      |> route.operation_id("replaceTodo")
-      |> route.tags(["todos"])
-      |> route.path_param("id", param.string())
-      |> route.accepts(ref("Todo"))
-      |> route.returns(200, ref("Todo"))
-      |> route.returns(404, ref("ApiError")),
+      |> route.with_openapi(
+        OpenApi(
+          ..route.openapi(),
+          summary: Some("Replace a todo"),
+          operation_id: Some("replaceTodo"),
+          tags: ["todos"],
+          path: [#("id", param.string())],
+          request_body: Some(ref("Todo")),
+          responses: [
+            ResponseBody(200, ref("Todo")),
+            ResponseBody(404, ref("ApiError")),
+          ],
+        ),
+      ),
+    // The remaining routes use the simple path: `documented` sets the common
+    // fields (summary, tags, path, responses) in one call — no record, no
+    // `Some`. Reach for the record above when you also need a request body, a
+    // query record, or an `operationId`.
+    route.get("/todos/{id}", get_todo)
+      |> route.documented(
+        summary: "Get a todo by id",
+        tags: ["todos"],
+        path: [#("id", param.string())],
+        responses: [
+          ResponseBody(200, ref("Todo")),
+          ResponseBody(404, ref("ApiError")),
+        ],
+      ),
     route.delete("/todos/{id}", delete_todo)
-      |> route.summary("Delete a todo")
-      |> route.operation_id("deleteTodo")
-      |> route.tags(["todos"])
-      |> route.path_param("id", param.string())
-      |> route.returns_empty(204, "Deleted")
-      |> route.returns(404, ref("ApiError")),
+      |> route.documented(
+        summary: "Delete a todo",
+        tags: ["todos"],
+        path: [#("id", param.string())],
+        responses: [
+          EmptyResponse(204, "Deleted"),
+          ResponseBody(404, ref("ApiError")),
+        ],
+      ),
     route.get("/users/{id}", get_user)
-      |> route.summary("Get a user by id")
-      |> route.operation_id("getUser")
-      |> route.tags(["users"])
-      |> route.path_param("id", param.string())
-      |> route.returns(200, ref("User"))
-      |> route.returns(404, ref("ApiError")),
+      |> route.documented(
+        summary: "Get a user by id",
+        tags: ["users"],
+        path: [#("id", param.string())],
+        responses: [
+          ResponseBody(200, ref("User")),
+          ResponseBody(404, ref("ApiError")),
+        ],
+      ),
   ]
 }
 
