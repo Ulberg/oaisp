@@ -144,7 +144,7 @@ gleam run -m oaisp/cli <command> [options]
 | Command | What it does |
 |---|---|
 | `generate` | Emit the OpenAPI 3.1 document. |
-| `lint` | Check declarations: `type_ref` existence, `{placeholder}` ↔ path params, duplicate operations. Non-zero on error. |
+| `lint` | Check declarations: `type_ref` existence, `{placeholder}` ↔ path params, duplicate operations, `@format` directives. Non-zero on error. |
 | `diff <old> <new>` | Report breaking changes between two documents (a CI gate). |
 | `derive` | Generate decoder + encoder functions for your public types. |
 
@@ -161,6 +161,7 @@ Options: `-o, --out <PATH>` (`-` for stdout), `--package-interface <PATH>`,
 | `Dict(String, V)` | `object` with `additionalProperties: V` |
 | union of fieldless variants | `string` `enum` |
 | `String` / `Int` / `Float` / `Bool` | `string` / `integer` / `number` / `boolean` |
+| `String` field with a `@format` directive | `string` with that `format` |
 | `gleam/time/timestamp.Timestamp` | `string`, `format: date-time` (RFC 3339) |
 | reference to another public type | `$ref` (collected transitively) |
 | opaque type, generic, or union with payloads | permissively under-described |
@@ -175,6 +176,36 @@ becomes `format: date-time`. oaisp recognises it by name in the package interfac
 and takes no dependency on `gleam_time`, so the format rides on the standard type
 without forcing an oaisp-owned type on you — the same way the F# generator derives
 `date-time` from `DateTimeOffset`.
+
+### `@format` — formats for plain string fields
+
+When a field is a plain `String` (not a dedicated type), request a `format` with
+a `@format <field>: <format>` directive in the type's **doc comment**. Gleam has
+no metaprogramming, so a doc comment is the one place metadata can sit next to a
+type and still reach the generator — the nearest equivalent to an F#
+`[DataType(DataType.EmailAddress)]` attribute.
+
+```gleam
+/// A user account.
+/// @format email: email
+/// @format website: uri
+pub type User {
+  User(id: String, email: String, website: String)
+}
+```
+
+`email` and `website` stay `String` in your code — the directive is pure
+metadata. In the document they become `{ "type": "string", "format": "email" }`
+and `{ … "format": "uri" }`. The directive lines never appear in the schema
+`description`. It applies to a `String` or an `Option(String)` field; on any
+other field it is ignored.
+
+Because the directive is text, `oaisp lint` validates every `@format` against
+the type's fields — an unknown field, a non-string field, an unrecognised format
+name, or a malformed line is reported (as a warning: a directive oaisp can't
+honour is simply dropped, so the document stays sound). Any format string is
+allowed; the standard OpenAPI/JSON-Schema names (`email`, `uri`, `uuid`, `date`,
+`ipv4`, …) are recognised without a warning.
 
 ## Query parameters
 

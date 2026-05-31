@@ -12,6 +12,12 @@ pub type Priority {
 }
 
 /// A user account.
+///
+/// `@format` directives attach an OpenAPI `string` `format` to a field without
+/// changing its Gleam type — `email` stays a `String`, but the schema marks it
+/// `format: email`. Pure metadata, the nearest Gleam gets to an F# `[DataType]`
+/// attribute. `oaisp lint` checks every directive against the type's fields.
+/// @format email: email
 pub type User {
   User(id: String, name: String, email: Option(String))
 }

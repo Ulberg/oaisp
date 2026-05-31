@@ -225,6 +225,7 @@ fn query_scalar_oas(field_type: pkg.FieldType) -> Result(Oas, Nil) {
         Ok(inner) -> Ok(OArray(inner))
         Error(Nil) -> Error(Nil)
       }
+    pkg.FormattedStringType(format) -> Ok(OStringFormat(format))
     pkg.TimestampType -> Ok(OStringFormat("date-time"))
     _ -> Error(Nil)
   }
@@ -455,6 +456,7 @@ fn field_oas(field_type: pkg.FieldType, resolvable: Set(String)) -> Oas {
     pkg.DictType(value) -> OMap(field_oas(value, resolvable))
     pkg.TupleType(elements) ->
       OTuple(list.map(elements, field_oas(_, resolvable)))
+    pkg.FormattedStringType(format) -> OStringFormat(format)
     pkg.TimestampType -> OStringFormat("date-time")
     pkg.RefType(_module, name) -> ref_or_any(name, resolvable)
     pkg.AnyType -> OAny(None)

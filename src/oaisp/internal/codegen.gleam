@@ -18,8 +18,8 @@ import gleam/set.{type Set}
 import gleam/string
 import oaisp/internal/package_interface.{
   type FieldType, type ResolvedType, AnyType, BoolType, DictType, EnumType,
-  FloatType, IntType, ListType, NilType, OptionType, RecordType, RefType,
-  StringType, TimestampType, TupleType, Unmodelled,
+  FloatType, FormattedStringType, IntType, ListType, NilType, OptionType,
+  RecordType, RefType, StringType, TimestampType, TupleType, Unmodelled,
 } as pkg
 
 /// Generate a Gleam module of decoders and encoders for `package`'s public
@@ -102,7 +102,14 @@ fn derivable(
 
 fn field_derivable(field_type: FieldType, current: Set(String)) -> Bool {
   case field_type {
-    StringType | IntType | FloatType | BoolType | NilType -> True
+    // A formatted field is a `String` at runtime, so its codec is the plain
+    // string codec — the format is documentation only.
+    StringType
+    | FormattedStringType(..)
+    | IntType
+    | FloatType
+    | BoolType
+    | NilType -> True
     ListType(element) -> field_derivable(element, current)
     OptionType(inner) -> field_derivable(inner, current)
     DictType(value) -> field_derivable(value, current)
@@ -251,7 +258,7 @@ fn generate_enum(
 
 fn decoder_expr(field_type: FieldType) -> String {
   case field_type {
-    StringType -> "decode.string"
+    StringType | FormattedStringType(..) -> "decode.string"
     IntType -> "decode.int"
     FloatType -> "decode.float"
     BoolType -> "decode.bool"
@@ -281,7 +288,7 @@ fn encode_field(field_type: FieldType, value: String) -> String {
 
 fn encoder_fn(field_type: FieldType) -> String {
   case field_type {
-    StringType -> "json.string"
+    StringType | FormattedStringType(..) -> "json.string"
     IntType -> "json.int"
     FloatType -> "json.float"
     BoolType -> "json.bool"

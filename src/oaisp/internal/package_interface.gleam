@@ -66,6 +66,12 @@ pub type FieldType {
   OptionType(inner: FieldType)
   DictType(value: FieldType)
   TupleType(elements: List(FieldType))
+  /// A `String` field carrying an OpenAPI `format`, requested by a
+  /// `@format <field>: <format>` directive in the enclosing type's doc comment.
+  /// The runtime value is still a `String`, so codecs are unaffected; the format
+  /// is pure metadata, the nearest Gleam gets to an F# `[DataType]` attribute.
+  /// See [`parse_format_lines`](#parse_format_lines).
+  FormattedStringType(format: String)
   /// The standard `gleam/time/timestamp.Timestamp`, rendered as an RFC 3339
   /// `string` with `format: date-time`. Recognised by name in the package
   /// interface, so oaisp takes no dependency on `gleam_time` and never forces an
@@ -119,6 +125,22 @@ pub fn resolve_type(
   classify(definition)
 }
 
+/// The `@format` directives declared in a type's doc comment, for `oaisp lint`
+/// to validate against the type's actual fields.
+///
+/// [`resolve_type`](#resolve_type) silently applies the well-formed directives
+/// to matching string fields and ignores the rest (a deliberately liberal
+/// projection); this exposes every directive — including malformed ones — so
+/// lint can turn "silently ignored" back into a reported finding.
+pub fn format_directives(
+  package: Package,
+  module module: String,
+  name name: String,
+) -> Result(List(FormatDirective), Error) {
+  use definition <- result.map(lookup_type(package, module:, name:))
+  parse_format_lines(raw_doc_lines(definition.documentation))
+}
+
 /// Every public type in the interface, as `(module, name)` pairs.
 pub fn type_names(package: Package) -> List(#(String, String)) {
   package.modules
@@ -132,11 +154,16 @@ pub fn type_names(package: Package) -> List(#(String, String)) {
 }
 
 fn classify(definition: pi.TypeDefinition) -> ResolvedType {
-  let documentation = clean_doc(definition.documentation)
+  // The doc comment is two things at once: prose (the schema description) and
+  // any `@format` directives. Parse it once, then hand each part to the side
+  // that needs it.
+  let raw = raw_doc_lines(definition.documentation)
+  let documentation = clean_doc(raw)
+  let formats = format_map(parse_format_lines(raw))
   case definition.constructors {
     // Opaque types are public but expose no constructors.
     [] -> Unmodelled(documentation)
-    [single] -> classify_product(single, documentation)
+    [single] -> classify_product(single, documentation, formats)
     many -> classify_union(many, documentation)
   }
 }
@@ -144,13 +171,16 @@ fn classify(definition: pi.TypeDefinition) -> ResolvedType {
 fn classify_product(
   constructor: pi.TypeConstructor,
   documentation: Option(String),
+  formats: dict.Dict(String, String),
 ) -> ResolvedType {
   // A record needs labels to name its object properties; zero fields counts as
   // an empty object. Positional fields cannot be named, so under-describe.
   case list.all(constructor.parameters, fn(p) { option.is_some(p.label) }) {
     True ->
       RecordType(
-        list.map(constructor.parameters, field_from_param),
+        list.map(constructor.parameters, fn(parameter) {
+          field_from_param(parameter, formats)
+        }),
         documentation,
       )
     False -> Unmodelled(documentation)
@@ -167,10 +197,29 @@ fn classify_union(
   }
 }
 
-fn field_from_param(parameter: pi.Parameter) -> Field {
+fn field_from_param(
+  parameter: pi.Parameter,
+  formats: dict.Dict(String, String),
+) -> Field {
   let assert Some(label) = parameter.label
     as "record fields are checked to be labelled before this point"
-  Field(name: label, type_: field_type(parameter.type_))
+  let base = field_type(parameter.type_)
+  let type_ = case dict.get(formats, label) {
+    Ok(format) -> apply_format(base, format)
+    Error(Nil) -> base
+  }
+  Field(name: label, type_:)
+}
+
+/// Attach a `@format` to a field's type. A format describes a `string`, so it
+/// only takes on a `String` field (directly or inside an `Option`); on any
+/// other field type it is ignored here and reported by `oaisp lint`.
+fn apply_format(base: FieldType, format: String) -> FieldType {
+  case base {
+    StringType -> FormattedStringType(format)
+    OptionType(StringType) -> OptionType(FormattedStringType(format))
+    other -> other
+  }
 }
 
 fn field_type(type_: pi.Type) -> FieldType {
@@ -211,24 +260,104 @@ fn nth_type(parameters: List(pi.Type), index: Int) -> FieldType {
   }
 }
 
+/// One outcome of parsing a `@format` directive line from a doc comment.
+pub type FormatDirective {
+  /// A well-formed `@format <field>: <format>` naming a field and a format.
+  FormatDirective(field: String, format: String)
+  /// A `@format` line that isn't `@format <field>: <format>` — e.g. a missing
+  /// colon or an empty field/format. Carries the offending text so `oaisp lint`
+  /// can quote it. (oaisp ignores it when building the schema.)
+  MalformedFormat(line: String)
+}
+
 /// Gleam stores a `///` doc as " line one\n line two" — one leading space per
-/// line. Drop that space and trim the result into clean Markdown.
-fn clean_doc(documentation: Option(String)) -> Option(String) {
+/// line. Drop that single leading space, returning the lines.
+fn raw_doc_lines(documentation: Option(String)) -> List(String) {
   case documentation {
-    None -> None
-    Some(text) -> {
-      let cleaned =
-        text
-        |> string.split("\n")
-        |> list.map(strip_one_leading_space)
-        |> string.join("\n")
-        |> string.trim
-      case cleaned {
-        "" -> None
-        _ -> Some(cleaned)
+    None -> []
+    Some(text) ->
+      text
+      |> string.split("\n")
+      |> list.map(strip_one_leading_space)
+  }
+}
+
+/// The prose of a doc comment: every line that isn't a `@format` directive,
+/// trimmed into clean Markdown. `None` when nothing but directives remain.
+fn clean_doc(lines: List(String)) -> Option(String) {
+  let cleaned =
+    lines
+    |> list.filter(fn(line) { !is_format_line(line) })
+    |> string.join("\n")
+    |> string.trim
+  case cleaned {
+    "" -> None
+    _ -> Some(cleaned)
+  }
+}
+
+/// Parse the `@format` directives out of a type's doc-comment lines (already
+/// stripped of their one leading space by [`raw_doc_lines`](#raw_doc_lines)).
+///
+/// A directive is `@format <field>: <format>` — the field is a record label and
+/// the format is the OpenAPI `format` to attach to it. Lines that don't match
+/// come back as [`MalformedFormat`](#FormatDirective) so `oaisp lint` can flag
+/// them; this function never fails. Whether a named field exists, is a string,
+/// or names a known format is `lint`'s job, not the parser's.
+pub fn parse_format_lines(lines: List(String)) -> List(FormatDirective) {
+  lines
+  |> list.filter(is_format_line)
+  |> list.map(parse_format_line)
+}
+
+fn is_format_line(line: String) -> Bool {
+  // `@format` must be a whole token: `@format email: …` is a directive, but
+  // `@formatting` or `@format-version` is ordinary prose, not a typo'd one.
+  let rest =
+    line
+    |> string.trim_start
+    |> string.split_once(format_prefix)
+  case rest {
+    Ok(#("", after)) ->
+      after == ""
+      || string.starts_with(after, " ")
+      || string.starts_with(after, "\t")
+    _ -> False
+  }
+}
+
+const format_prefix = "@format"
+
+fn parse_format_line(line: String) -> FormatDirective {
+  let body =
+    line
+    |> string.trim_start
+    |> string.drop_start(string.length(format_prefix))
+    |> string.trim
+  case string.split_once(body, ":") {
+    Ok(#(field, format)) -> {
+      let field = string.trim(field)
+      let format = string.trim(format)
+      case field == "" || format == "" || string.contains(field, " ") {
+        True -> MalformedFormat(line: string.trim(line))
+        False -> FormatDirective(field:, format:)
       }
     }
+    Error(Nil) -> MalformedFormat(line: string.trim(line))
   }
+}
+
+/// The well-formed directives as a `field -> format` dict (later wins on
+/// duplicates). Malformed lines are dropped; `lint` surfaces them separately.
+fn format_map(directives: List(FormatDirective)) -> dict.Dict(String, String) {
+  directives
+  |> list.filter_map(fn(directive) {
+    case directive {
+      FormatDirective(field:, format:) -> Ok(#(field, format))
+      MalformedFormat(..) -> Error(Nil)
+    }
+  })
+  |> dict.from_list
 }
 
 fn strip_one_leading_space(line: String) -> String {
