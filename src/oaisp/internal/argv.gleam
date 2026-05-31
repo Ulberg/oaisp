@@ -31,10 +31,8 @@ pub fn parse(arguments: List(String)) -> Result(Options, Error) {
   parse_with(arguments, default_options())
 }
 
-/// Parse starting from a caller-supplied default — e.g. `derive` defaults its
-/// output to stdout rather than `./openapi.json`. Also the recursion step:
-/// `options` carries the flags parsed so far.
-pub fn parse_with(
+/// The recursion step: `options` carries the flags parsed so far.
+fn parse_with(
   arguments: List(String),
   options: Options,
 ) -> Result(Options, Error) {

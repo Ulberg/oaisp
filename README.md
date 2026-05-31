@@ -144,9 +144,6 @@ gleam run -m oaisp/cli <command> [options]
 | Command | What it does |
 |---|---|
 | `generate` | Emit the OpenAPI 3.1 document. |
-| `lint` | Check declarations: `type_ref` existence, `{placeholder}` ↔ path params, duplicate operations, `@format` directives. Non-zero on error. |
-| `diff <old> <new>` | Report breaking changes between two documents (a CI gate). |
-| `derive` | Generate decoder + encoder functions for your public types. |
 
 Options: `-o, --out <PATH>` (`-` for stdout), `--package-interface <PATH>`,
 `--quiet`. Writes are atomic; status goes to stderr.
@@ -200,18 +197,16 @@ and `{ … "format": "uri" }`. The directive lines never appear in the schema
 `description`. It applies to a `String` or an `Option(String)` field; on any
 other field it is ignored.
 
-Because the directive is text, `oaisp lint` validates every `@format` against
-the type's fields — an unknown field, a non-string field, an unrecognised format
-name, or a malformed line is reported (as a warning: a directive oaisp can't
-honour is simply dropped, so the document stays sound). Any format string is
-allowed; the standard OpenAPI/JSON-Schema names (`email`, `uri`, `uuid`, `date`,
-`ipv4`, …) are recognised without a warning.
+Because the directive is pure text, a directive oaisp can't honour — naming an
+unknown field, a non-string field, or a malformed line — is simply dropped, so
+the document always stays sound. Any format string is allowed and rides through
+to the document as-is (`email`, `uri`, `uuid`, `date`, `ipv4`, …).
 
 ## Query parameters
 
 Declare query parameters either way:
 
-- **Explicitly** — `query: [QueryParam("limit", param.int(), False), …]`.
+- **Explicitly** — `query: [QueryParam("q", param.string(), False), …]`.
 - **Reflected from a record** — `query_record: Some(type_ref("myapp/types", "TodoQuery"))`.
   Each scalar field of the record becomes a query parameter (an `Option` field
   is optional, the rest required; a `List(scalar)` field becomes an array
@@ -222,11 +217,11 @@ Declare query parameters either way:
 
 - **Soundness, not completeness.** Undeclared routes are served by your fallback
   and left out of the doc; that's intentional (streaming, websockets, …).
-- **Schemas follow type structure** — oaisp assumes your handler reads/writes a
-  type with its field labels as JSON keys. For guaranteed-matching codecs, use
-  `oaisp derive`.
-- **Public types only.** A `type_ref` to a private type fails to resolve —
-  `oaisp lint` flags it.
+- **Schemas follow type structure** — oaisp assumes your handler reads and
+  writes a type with its field labels as JSON keys, so your encoders and
+  decoders must follow the same shape.
+- **Public types only.** A `type_ref` is resolved against the package interface,
+  so it must name a public type.
 - **Erlang target only.**
 
 ## Example

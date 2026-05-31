@@ -30,7 +30,7 @@ const openapi_version = "3.1.0"
 
 /// Build the OpenAPI 3.1 document for `endpoints` and `info`, resolving type
 /// references against `package`.
-pub fn to_openapi(
+fn to_openapi(
   endpoints: List(Endpoint),
   info: Info,
   package: pkg.Package,

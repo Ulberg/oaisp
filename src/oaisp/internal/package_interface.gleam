@@ -90,7 +90,7 @@ pub fn decode_string(input: String) -> Result(Package, Error) {
 }
 
 /// Look up a public type definition by module path and name.
-pub fn lookup_type(
+fn lookup_type(
   package: Package,
   module module: String,
   name name: String,
@@ -112,34 +112,6 @@ pub fn resolve_type(
 ) -> Result(ResolvedType, Error) {
   use definition <- result.map(lookup_type(package, module:, name:))
   classify(definition)
-}
-
-/// The `@format` directives declared in a type's doc comment, for `oaisp lint`
-/// to validate against the type's actual fields.
-///
-/// [`resolve_type`](#resolve_type) silently applies the well-formed directives
-/// to matching string fields and ignores the rest (a deliberately liberal
-/// projection); this exposes every directive — including malformed ones — so
-/// lint can turn "silently ignored" back into a reported finding.
-pub fn format_directives(
-  package: Package,
-  module module: String,
-  name name: String,
-) -> Result(List(FormatDirective), Error) {
-  use definition <- result.map(lookup_type(package, module:, name:))
-  parse_format_lines(raw_doc_lines(definition.documentation))
-}
-
-/// Every public type in the interface, as `(module, name)` pairs.
-pub fn type_names(package: Package) -> List(#(String, String)) {
-  package.modules
-  |> dict.to_list
-  |> list.flat_map(fn(entry) {
-    let #(module, module_interface) = entry
-    module_interface.types
-    |> dict.keys
-    |> list.map(fn(name) { #(module, name) })
-  })
 }
 
 fn classify(definition: pi.TypeDefinition) -> ResolvedType {
@@ -202,7 +174,7 @@ fn field_from_param(
 
 /// Attach a `@format` to a field's type. A format describes a `string`, so it
 /// only takes on a `String` field (directly or inside an `Option`); on any
-/// other field type it is ignored here and reported by `oaisp lint`.
+/// other field type it is ignored here.
 fn apply_format(base: FieldType, format: String) -> FieldType {
   case base {
     StringType -> FormattedStringType(format)
@@ -254,8 +226,8 @@ pub type FormatDirective {
   /// A well-formed `@format <field>: <format>` naming a field and a format.
   FormatDirective(field: String, format: String)
   /// A `@format` line that isn't `@format <field>: <format>` — e.g. a missing
-  /// colon or an empty field/format. Carries the offending text so `oaisp lint`
-  /// can quote it. (oaisp ignores it when building the schema.)
+  /// colon or an empty field/format. Carries the offending text; oaisp ignores
+  /// it when building the schema.
   MalformedFormat(line: String)
 }
 
@@ -290,9 +262,9 @@ fn clean_doc(lines: List(String)) -> Option(String) {
 ///
 /// A directive is `@format <field>: <format>` — the field is a record label and
 /// the format is the OpenAPI `format` to attach to it. Lines that don't match
-/// come back as [`MalformedFormat`](#FormatDirective) so `oaisp lint` can flag
-/// them; this function never fails. Whether a named field exists, is a string,
-/// or names a known format is `lint`'s job, not the parser's.
+/// come back as [`MalformedFormat`](#FormatDirective); this function never
+/// fails. Whether a named field exists, is a string, or names a known format is
+/// decided later, when the directives are applied to the resolved type.
 pub fn parse_format_lines(lines: List(String)) -> List(FormatDirective) {
   lines
   |> list.filter(is_format_line)

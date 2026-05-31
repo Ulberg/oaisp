@@ -20,17 +20,10 @@ import oaisp/internal/emit
 import oaisp/route
 import oaisp/schema as schema_module
 
-/// The version of the oaisp library.
-pub const version: String = "0.1.0"
-
 /// A schema reference for a body, response, or parameter. See
 /// [`oaisp/schema`](./oaisp/schema.html).
 pub type Schema =
   schema_module.Schema
-
-/// The primitive kinds an inline scalar schema can take.
-pub type ScalarKind =
-  schema_module.ScalarKind
 
 /// The top-level metadata for the emitted document.
 pub type Info =

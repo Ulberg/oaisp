@@ -7,10 +7,6 @@ pub fn main() -> Nil {
   gleeunit.main()
 }
 
-pub fn version_test() {
-  assert oaisp.version == "0.1.0"
-}
-
 pub fn type_ref_reexport_test() {
   assert oaisp.type_ref("myapp/types", "Todo")
     == schema.type_ref("myapp/types", "Todo")

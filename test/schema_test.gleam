@@ -9,11 +9,8 @@ pub fn type_ref_test() {
     == schema.TypeRef("myapp/types", "Todo")
 }
 
-pub fn param_scalars_test() {
+pub fn param_string_test() {
   assert param.string() == schema.Scalar(schema.StringKind, None)
-  assert param.int() == schema.Scalar(schema.IntKind, None)
-  assert param.bool() == schema.Scalar(schema.BoolKind, None)
-  assert param.float() == schema.Scalar(schema.FloatKind, None)
 }
 
 pub fn wire_round_trips_test() {
@@ -21,9 +18,9 @@ pub fn wire_round_trips_test() {
   [
     schema.type_ref("myapp/types", "Todo"),
     param.string(),
-    param.int(),
-    param.bool(),
-    param.float(),
+    schema.Scalar(schema.IntKind, None),
+    schema.Scalar(schema.BoolKind, None),
+    schema.Scalar(schema.FloatKind, None),
   ]
   |> list.each(fn(reference) {
     let encoded = json.to_string(schema.schema_to_json(reference))

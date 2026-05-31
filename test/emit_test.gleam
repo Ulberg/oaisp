@@ -1,4 +1,4 @@
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import oaisp/endpoint
 import oaisp/info
 import oaisp/internal/emit
@@ -27,7 +27,11 @@ pub fn round_trip_test() {
           |> endpoint.with_response(201, todo_ref()),
         endpoint.get("/todos/{id}")
           |> endpoint.with_path_param("id", param.string())
-          |> endpoint.with_query_param("verbose", param.bool(), False)
+          |> endpoint.with_query_param(
+            "verbose",
+            schema.Scalar(schema.BoolKind, None),
+            False,
+          )
           |> endpoint.with_query_record(schema.type_ref("myapp/types", "Filter"))
           |> endpoint.with_response(200, todo_ref())
           |> endpoint.with_empty_response(404, "Not found"),

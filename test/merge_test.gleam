@@ -1,5 +1,6 @@
 import gleam/dynamic/decode
 import gleam/json
+import gleam/option.{None}
 import oaisp/endpoint
 import oaisp/info
 import oaisp/internal/fs
@@ -21,7 +22,11 @@ fn todo_ref() -> schema.Schema {
 fn endpoints() -> List(endpoint.Endpoint) {
   [
     endpoint.get("/todos")
-      |> endpoint.with_query_param("limit", param.int(), False)
+      |> endpoint.with_query_param(
+        "limit",
+        schema.Scalar(schema.IntKind, None),
+        False,
+      )
       |> endpoint.with_response(200, todo_ref())
       |> endpoint.with_summary("List todos")
       |> endpoint.with_tag("todos"),
