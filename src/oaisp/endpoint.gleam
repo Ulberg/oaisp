@@ -11,6 +11,7 @@ import gleam/dynamic/decode
 import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/string
 import oaisp/schema.{type Schema, schema_decoder, schema_to_json}
 
 /// An HTTP method oaisp can document.
@@ -237,6 +238,32 @@ pub fn method_to_string(method: Method) -> String {
     Put -> "put"
     Patch -> "patch"
     Delete -> "delete"
+  }
+}
+
+/// Every `(module, name)` type reference the endpoint mentions — across its body,
+/// response bodies, and path/query parameters — deduplicated. The single source
+/// for "which public types does this endpoint touch", used by both the merge
+/// (to seed the component closure) and the lint (to check resolvability).
+pub fn type_refs(endpoint: Endpoint) -> List(#(String, String)) {
+  let bodies = [endpoint.body, ..list.map(endpoint.responses, fn(r) { r.body })]
+  [
+    option.values(bodies),
+    list.map(endpoint.path_params, fn(p) { p.schema }),
+    list.map(endpoint.query_params, fn(p) { p.schema }),
+  ]
+  |> list.flatten
+  |> list.filter_map(schema.type_ref_parts)
+  |> list.unique
+}
+
+/// The placeholder name in a `{name}` path segment, or `None` for a literal
+/// segment. The one definition of oaisp's path-placeholder syntax, shared by
+/// route matching and lint.
+pub fn placeholder_name(segment: String) -> Option(String) {
+  case string.starts_with(segment, "{") && string.ends_with(segment, "}") {
+    True -> Some(segment |> string.drop_start(1) |> string.drop_end(1))
+    False -> None
   }
 }
 

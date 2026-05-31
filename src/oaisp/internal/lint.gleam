@@ -15,13 +15,12 @@ import gleam/bool
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option
 import gleam/order
 import gleam/set
 import gleam/string
 import oaisp/endpoint.{type Endpoint}
 import oaisp/internal/package_interface as pkg
-import oaisp/schema.{Scalar, TypeRef}
 
 /// How serious a finding is. A `Violation` should fail a CI lint gate; a
 /// `Warning` is advisory (the document is still sound, just less precise).
@@ -110,7 +109,7 @@ fn path_param_findings(e: Endpoint) -> List(Finding) {
 fn type_ref_findings(e: Endpoint, package: pkg.Package) -> List(Finding) {
   let location = location(e)
   e
-  |> endpoint_type_refs
+  |> endpoint.type_refs
   |> list.flat_map(fn(reference) {
     let #(module, name) = reference
     let qualified = module <> "." <> name
@@ -249,36 +248,11 @@ fn warn(location: String, qualified: String, detail: String) -> Finding {
   Finding(Warning, location, "type `" <> qualified <> "`: " <> detail)
 }
 
-fn endpoint_type_refs(e: Endpoint) -> List(#(String, String)) {
-  [
-    case endpoint.body(e) {
-      Some(schema) -> [schema]
-      None -> []
-    },
-    list.filter_map(endpoint.responses(e), fn(r) {
-      option.to_result(r.body, Nil)
-    }),
-    list.map(endpoint.path_params(e), fn(p) { p.schema }),
-    list.map(endpoint.query_params(e), fn(p) { p.schema }),
-  ]
-  |> list.flatten
-  |> list.filter_map(fn(schema) {
-    case schema {
-      TypeRef(module:, name:) -> Ok(#(module, name))
-      Scalar(..) -> Error(Nil)
-    }
-  })
-  |> list.unique
-}
-
 fn path_placeholders(path: String) -> List(String) {
   path
   |> string.split("/")
   |> list.filter_map(fn(segment) {
-    case string.starts_with(segment, "{") && string.ends_with(segment, "}") {
-      True -> Ok(segment |> string.drop_start(1) |> string.drop_end(1))
-      False -> Error(Nil)
-    }
+    endpoint.placeholder_name(segment) |> option.to_result(Nil)
   })
 }
 

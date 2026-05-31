@@ -15,6 +15,7 @@ import gleam/int
 import gleam/json.{type Json}
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/set.{type Set}
 import gleam/string
 import oaisp/endpoint.{type Endpoint}
@@ -100,15 +101,7 @@ fn paths_object(
 }
 
 fn ordered_paths(endpoints: List(Endpoint)) -> List(String) {
-  endpoints
-  |> list.fold([], fn(seen, e) {
-    let path = endpoint.path(e)
-    case list.contains(seen, path) {
-      True -> seen
-      False -> [path, ..seen]
-    }
-  })
-  |> list.reverse
+  endpoints |> list.map(endpoint.path) |> list.unique
 }
 
 fn path_item(
@@ -206,10 +199,8 @@ fn reflected_query_param(field: pkg.Field) -> Result(Json, Nil) {
     pkg.OptionType(inner) -> #(inner, False)
     other -> #(other, True)
   }
-  case query_scalar_oas(base) {
-    Ok(oas) -> Ok(query_parameter_json(field.name, oas, required))
-    Error(Nil) -> Error(Nil)
-  }
+  query_scalar_oas(base)
+  |> result.map(query_parameter_json(field.name, _, required))
 }
 
 /// The scalar `Oas` a query-parameter field maps to, or `Error` if the field
@@ -220,11 +211,7 @@ fn query_scalar_oas(field_type: pkg.FieldType) -> Result(Oas, Nil) {
     pkg.IntType -> Ok(OInteger)
     pkg.FloatType -> Ok(ONumber)
     pkg.BoolType -> Ok(OBoolean)
-    pkg.ListType(element) ->
-      case query_scalar_oas(element) {
-        Ok(inner) -> Ok(OArray(inner))
-        Error(Nil) -> Error(Nil)
-      }
+    pkg.ListType(element) -> query_scalar_oas(element) |> result.map(OArray)
     pkg.FormattedStringType(format) -> Ok(OStringFormat(format))
     pkg.TimestampType -> Ok(OStringFormat("date-time"))
     _ -> Error(Nil)
@@ -361,38 +348,7 @@ fn field_type_refs(field_type: pkg.FieldType) -> List(#(String, String)) {
 // --- seed collection ---------------------------------------------------------
 
 fn seed_refs(endpoints: List(Endpoint)) -> List(#(String, String)) {
-  list.flat_map(endpoints, endpoint_refs)
-}
-
-fn endpoint_refs(e: Endpoint) -> List(#(String, String)) {
-  [body_schemas(e), response_schemas(e), param_schemas(e)]
-  |> list.flatten
-  |> list.filter_map(type_ref)
-}
-
-fn type_ref(schema: Schema) -> Result(#(String, String), Nil) {
-  case schema {
-    TypeRef(module:, name:) -> Ok(#(module, name))
-    Scalar(..) -> Error(Nil)
-  }
-}
-
-fn body_schemas(e: Endpoint) -> List(Schema) {
-  case endpoint.body(e) {
-    Some(schema) -> [schema]
-    None -> []
-  }
-}
-
-fn response_schemas(e: Endpoint) -> List(Schema) {
-  list.filter_map(endpoint.responses(e), fn(r) { option.to_result(r.body, Nil) })
-}
-
-fn param_schemas(e: Endpoint) -> List(Schema) {
-  list.append(
-    list.map(endpoint.path_params(e), fn(p) { p.schema }),
-    list.map(endpoint.query_params(e), fn(p) { p.schema }),
-  )
+  list.flat_map(endpoints, endpoint.type_refs)
 }
 
 // --- schema (Oas) intermediate -----------------------------------------------

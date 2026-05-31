@@ -34,6 +34,15 @@ pub fn type_ref(module module: String, name name: String) -> Schema {
   TypeRef(module:, name:)
 }
 
+/// The `#(module, name)` of a [`TypeRef`](#Schema), or `Error` for an inline
+/// [`Scalar`](#Schema) — shaped for `list.filter_map` over a list of schemas.
+pub fn type_ref_parts(schema: Schema) -> Result(#(String, String), Nil) {
+  case schema {
+    TypeRef(module:, name:) -> Ok(#(module, name))
+    Scalar(..) -> Error(Nil)
+  }
+}
+
 /// Encode a [`Schema`](#Schema) into the internal wire JSON that
 /// `--emit-endpoints` uses to carry declarations from the app to the CLI.
 @internal

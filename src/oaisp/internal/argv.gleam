@@ -32,27 +32,21 @@ pub fn parse(arguments: List(String)) -> Result(Options, Error) {
 }
 
 /// Parse starting from a caller-supplied default — e.g. `derive` defaults its
-/// output to stdout rather than `./openapi.json`.
+/// output to stdout rather than `./openapi.json`. Also the recursion step:
+/// `options` carries the flags parsed so far.
 pub fn parse_with(
-  arguments: List(String),
-  default: Options,
-) -> Result(Options, Error) {
-  do_parse(arguments, default)
-}
-
-fn do_parse(
   arguments: List(String),
   options: Options,
 ) -> Result(Options, Error) {
   case arguments {
     [] -> Ok(options)
     ["-o", value, ..rest] | ["--out", value, ..rest] ->
-      do_parse(rest, Options(..options, out: parse_out(value)))
+      parse_with(rest, Options(..options, out: parse_out(value)))
     ["-o"] | ["--out"] -> Error(MissingValue("--out"))
     ["--package-interface", value, ..rest] ->
-      do_parse(rest, Options(..options, package_interface: Some(value)))
+      parse_with(rest, Options(..options, package_interface: Some(value)))
     ["--package-interface"] -> Error(MissingValue("--package-interface"))
-    ["--quiet", ..rest] -> do_parse(rest, Options(..options, quiet: True))
+    ["--quiet", ..rest] -> parse_with(rest, Options(..options, quiet: True))
     [flag, ..] -> Error(UnknownFlag(flag))
   }
 }

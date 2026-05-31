@@ -14,6 +14,7 @@
 
 import gleam/dict.{type Dict}
 import gleam/list
+import gleam/result
 import gleam/set.{type Set}
 import gleam/string
 import oaisp/internal/package_interface.{
@@ -29,10 +30,8 @@ pub fn codecs(package: pkg.Package) -> String {
     pkg.type_names(package)
     |> list.filter_map(fn(reference) {
       let #(module, name) = reference
-      case pkg.resolve_type(package, module, name) {
-        Ok(resolved_type) -> Ok(#(name, #(module, resolved_type)))
-        Error(_) -> Error(Nil)
-      }
+      pkg.resolve_type(package, module, name)
+      |> result.map(fn(resolved_type) { #(name, #(module, resolved_type)) })
     })
     |> dict.from_list
 

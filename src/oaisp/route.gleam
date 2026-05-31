@@ -21,8 +21,10 @@
 //// no dependency on wisp, mist, or any server library. `match` returns the
 //// matched handler and the captured path parameters for *you* to invoke.
 
+import gleam/bool
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 import oaisp/endpoint.{type Endpoint}
 import oaisp/schema.{type Schema}
@@ -163,14 +165,12 @@ pub fn match(
   path_segments: List(String),
 ) -> Result(Matched(handler), Nil) {
   list.find_map(routes, fn(route) {
-    case endpoint.method_to_string(endpoint.method(route.endpoint)) == method {
-      False -> Error(Nil)
-      True ->
-        case match_path(endpoint.path(route.endpoint), path_segments) {
-          Ok(params) -> Ok(Matched(route.handler, params))
-          Error(Nil) -> Error(Nil)
-        }
-    }
+    use <- bool.guard(
+      when: endpoint.method_to_string(endpoint.method(route.endpoint)) != method,
+      return: Error(Nil),
+    )
+    match_path(endpoint.path(route.endpoint), path_segments)
+    |> result.map(fn(params) { Matched(route.handler, params) })
   })
 }
 
@@ -189,7 +189,7 @@ fn do_match_path(
   case pattern, segments {
     [], [] -> Ok(list.reverse(captured))
     [pattern_segment, ..pattern_rest], [segment, ..segments_rest] ->
-      case placeholder_name(pattern_segment) {
+      case endpoint.placeholder_name(pattern_segment) {
         Some(name) ->
           do_match_path(pattern_rest, segments_rest, [
             #(name, segment),
@@ -209,11 +209,4 @@ fn path_segments(path: String) -> List(String) {
   path
   |> string.split("/")
   |> list.filter(fn(segment) { segment != "" })
-}
-
-fn placeholder_name(segment: String) -> Option(String) {
-  case string.starts_with(segment, "{") && string.ends_with(segment, "}") {
-    True -> Some(segment |> string.drop_start(1) |> string.drop_end(1))
-    False -> None
-  }
 }
