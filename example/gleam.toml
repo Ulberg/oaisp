@@ -3,9 +3,9 @@ version = "1.0.0"
 gleam = ">= 1.11.0"
 target = "erlang"
 
-# A runnable Wisp/mist example of using oaisp. The endpoint declarations in
-# src/example/api.gleam are what `oaisp generate` projects into openapi.json;
-# src/example/router.gleam serves matching responses for the end-to-end test.
+# A runnable Wisp/mist example of using oaisp. One `routes()` list in
+# src/example/api.gleam drives both the running server (via `route.match` in
+# `api.handle`) and what `oaisp generate` projects into openapi.json.
 [dependencies]
 oaisp = { path = ".." }
 gleam_stdlib = ">= 1.0.0 and < 2.0.0"

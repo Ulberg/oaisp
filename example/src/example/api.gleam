@@ -11,7 +11,7 @@ import gleam/option.{Some}
 import gleam/string
 import oaisp
 import oaisp/param
-import oaisp/route.{type Route, EmptyResponse, OpenApi, QueryParam, ResponseBody}
+import oaisp/route.{type Route, EmptyResponse, OpenApi, ResponseBody}
 import wisp
 
 /// A handler receives the request and the path parameters the route captured.
@@ -25,78 +25,90 @@ fn ref(name: String) -> oaisp.Schema {
 pub fn routes() -> List(Route(Handler)) {
   [
     route.get("/todos", list_todos)
-      |> route.with_openapi(OpenApi(
-        ..route.openapi(),
-        summary: Some("List todos"),
-        operation_id: Some("listTodos"),
-        tags: ["todos"],
-        query: [
-          QueryParam("limit", param.int(), False),
-          QueryParam("tag", param.string(), False),
-        ],
-        responses: [ResponseBody(200, ref("TodoPage"))],
-      )),
+      |> route.with_openapi(
+        OpenApi(
+          ..route.openapi(),
+          summary: Some("List todos"),
+          operation_id: Some("listTodos"),
+          tags: ["todos"],
+          // Reflected from the `TodoQuery` record: `limit` and `tag` become
+          // individual (optional) query parameters. Mirrors F#
+          // `addQueryParameters<'T>`.
+          query_record: Some(ref("TodoQuery")),
+          responses: [ResponseBody(200, ref("TodoPage"))],
+        ),
+      ),
     route.post("/todos", create_todo)
-      |> route.with_openapi(OpenApi(
-        ..route.openapi(),
-        summary: Some("Create a todo"),
-        operation_id: Some("createTodo"),
-        tags: ["todos"],
-        request_body: Some(ref("NewTodo")),
-        responses: [
-          ResponseBody(201, ref("Todo")),
-          ResponseBody(400, ref("ApiError")),
-        ],
-      )),
+      |> route.with_openapi(
+        OpenApi(
+          ..route.openapi(),
+          summary: Some("Create a todo"),
+          operation_id: Some("createTodo"),
+          tags: ["todos"],
+          request_body: Some(ref("NewTodo")),
+          responses: [
+            ResponseBody(201, ref("Todo")),
+            ResponseBody(400, ref("ApiError")),
+          ],
+        ),
+      ),
     route.get("/todos/{id}", get_todo)
-      |> route.with_openapi(OpenApi(
-        ..route.openapi(),
-        summary: Some("Get a todo by id"),
-        operation_id: Some("getTodo"),
-        tags: ["todos"],
-        path: [#("id", param.string())],
-        responses: [
-          ResponseBody(200, ref("Todo")),
-          ResponseBody(404, ref("ApiError")),
-        ],
-      )),
+      |> route.with_openapi(
+        OpenApi(
+          ..route.openapi(),
+          summary: Some("Get a todo by id"),
+          operation_id: Some("getTodo"),
+          tags: ["todos"],
+          path: [#("id", param.string())],
+          responses: [
+            ResponseBody(200, ref("Todo")),
+            ResponseBody(404, ref("ApiError")),
+          ],
+        ),
+      ),
     route.put("/todos/{id}", replace_todo)
-      |> route.with_openapi(OpenApi(
-        ..route.openapi(),
-        summary: Some("Replace a todo"),
-        operation_id: Some("replaceTodo"),
-        tags: ["todos"],
-        path: [#("id", param.string())],
-        request_body: Some(ref("Todo")),
-        responses: [
-          ResponseBody(200, ref("Todo")),
-          ResponseBody(404, ref("ApiError")),
-        ],
-      )),
+      |> route.with_openapi(
+        OpenApi(
+          ..route.openapi(),
+          summary: Some("Replace a todo"),
+          operation_id: Some("replaceTodo"),
+          tags: ["todos"],
+          path: [#("id", param.string())],
+          request_body: Some(ref("Todo")),
+          responses: [
+            ResponseBody(200, ref("Todo")),
+            ResponseBody(404, ref("ApiError")),
+          ],
+        ),
+      ),
     route.delete("/todos/{id}", delete_todo)
-      |> route.with_openapi(OpenApi(
-        ..route.openapi(),
-        summary: Some("Delete a todo"),
-        operation_id: Some("deleteTodo"),
-        tags: ["todos"],
-        path: [#("id", param.string())],
-        responses: [
-          EmptyResponse(204, "Deleted"),
-          ResponseBody(404, ref("ApiError")),
-        ],
-      )),
+      |> route.with_openapi(
+        OpenApi(
+          ..route.openapi(),
+          summary: Some("Delete a todo"),
+          operation_id: Some("deleteTodo"),
+          tags: ["todos"],
+          path: [#("id", param.string())],
+          responses: [
+            EmptyResponse(204, "Deleted"),
+            ResponseBody(404, ref("ApiError")),
+          ],
+        ),
+      ),
     route.get("/users/{id}", get_user)
-      |> route.with_openapi(OpenApi(
-        ..route.openapi(),
-        summary: Some("Get a user by id"),
-        operation_id: Some("getUser"),
-        tags: ["users"],
-        path: [#("id", param.string())],
-        responses: [
-          ResponseBody(200, ref("User")),
-          ResponseBody(404, ref("ApiError")),
-        ],
-      )),
+      |> route.with_openapi(
+        OpenApi(
+          ..route.openapi(),
+          summary: Some("Get a user by id"),
+          operation_id: Some("getUser"),
+          tags: ["users"],
+          path: [#("id", param.string())],
+          responses: [
+            ResponseBody(200, ref("User")),
+            ResponseBody(404, ref("ApiError")),
+          ],
+        ),
+      ),
   ]
 }
 

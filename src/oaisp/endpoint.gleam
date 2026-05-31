@@ -48,6 +48,7 @@ pub opaque type Endpoint {
     tags: List(String),
     path_params: List(Param),
     query_params: List(Param),
+    query_record: Option(Schema),
     body: Option(Schema),
     responses: List(Response),
   )
@@ -63,6 +64,7 @@ fn new(method: Method, path: String) -> Endpoint {
     tags: [],
     path_params: [],
     query_params: [],
+    query_record: None,
     body: None,
     responses: [],
   )
@@ -142,6 +144,15 @@ pub fn with_query_param(
   )
 }
 
+/// Document query parameters by reference to a record type: each of the
+/// record's scalar fields becomes a query parameter (an `Option` field is
+/// optional, the rest required). The type is resolved at merge time from the
+/// package interface; fields oaisp can't express as a scalar query parameter
+/// are soundly omitted. Mirrors F#'s `addQueryParameters<'T>`.
+pub fn with_query_record(endpoint: Endpoint, schema: Schema) -> Endpoint {
+  Endpoint(..endpoint, query_record: Some(schema))
+}
+
 /// Set the operation summary (a short one-line label).
 pub fn with_summary(endpoint: Endpoint, summary: String) -> Endpoint {
   Endpoint(..endpoint, summary: Some(summary))
@@ -200,6 +211,12 @@ pub fn path_params(endpoint: Endpoint) -> List(Param) {
 /// The endpoint's query parameters, in declaration order.
 pub fn query_params(endpoint: Endpoint) -> List(Param) {
   endpoint.query_params
+}
+
+/// The record type whose scalar fields are reflected into query parameters, if
+/// one was set with [`with_query_record`](#with_query_record).
+pub fn query_record(endpoint: Endpoint) -> Option(Schema) {
+  endpoint.query_record
 }
 
 /// The endpoint's request-body schema, if any.
@@ -286,6 +303,7 @@ pub fn to_json(endpoint: Endpoint) -> json.Json {
     #("tags", json.array(endpoint.tags, json.string)),
     #("path_params", json.array(endpoint.path_params, param_to_json)),
     #("query_params", json.array(endpoint.query_params, param_to_json)),
+    #("query_record", json.nullable(endpoint.query_record, schema_to_json)),
     #("body", json.nullable(endpoint.body, schema_to_json)),
     #("responses", json.array(endpoint.responses, response_to_json)),
   ])
@@ -306,6 +324,10 @@ pub fn decoder() -> decode.Decoder(Endpoint) {
   use tags <- decode.field("tags", decode.list(decode.string))
   use path_params <- decode.field("path_params", decode.list(param_decoder()))
   use query_params <- decode.field("query_params", decode.list(param_decoder()))
+  use query_record <- decode.field(
+    "query_record",
+    decode.optional(schema_decoder()),
+  )
   use body <- decode.field("body", decode.optional(schema_decoder()))
   use responses <- decode.field("responses", decode.list(response_decoder()))
   decode.success(Endpoint(
@@ -317,6 +339,7 @@ pub fn decoder() -> decode.Decoder(Endpoint) {
     tags:,
     path_params:,
     query_params:,
+    query_record:,
     body:,
     responses:,
   ))

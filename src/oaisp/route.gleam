@@ -44,6 +44,7 @@ pub type OpenApi {
     tags: List(String),
     path: List(#(String, Schema)),
     query: List(QueryParam),
+    query_record: Option(Schema),
     request_body: Option(Schema),
     responses: List(ResponseSpec),
   )
@@ -75,6 +76,7 @@ pub fn openapi() -> OpenApi {
     tags: [],
     path: [],
     query: [],
+    query_record: None,
     request_body: None,
     responses: [],
   )
@@ -119,6 +121,7 @@ pub fn with_openapi(route: Route(handler), config: OpenApi) -> Route(handler) {
     |> list.fold(config.query, _, fn(acc, param) {
       endpoint.with_query_param(acc, param.name, param.schema, param.required)
     })
+    |> set_optional(config.query_record, endpoint.with_query_record)
     |> set_optional(config.request_body, endpoint.with_body)
     |> list.fold(config.responses, _, apply_response)
   Route(..route, endpoint: annotated)

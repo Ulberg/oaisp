@@ -52,3 +52,18 @@ pub fn with_openapi_carries_the_doc_test() {
     == [endpoint.Param("id", schema.Scalar(schema.StringKind, None), True)]
   assert list.map(endpoint.responses(e), fn(r) { r.status }) == [200, 404]
 }
+
+pub fn with_openapi_carries_query_record_test() {
+  let routes = [
+    route.get("/todos", "h")
+    |> route.with_openapi(
+      OpenApi(
+        ..route.openapi(),
+        query_record: Some(schema.type_ref("myapp/types", "TodoQuery")),
+      ),
+    ),
+  ]
+  let assert [e] = route.to_endpoints(routes)
+  assert endpoint.query_record(e)
+    == Some(schema.type_ref("myapp/types", "TodoQuery"))
+}

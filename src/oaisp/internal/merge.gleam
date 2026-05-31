@@ -45,7 +45,7 @@ pub fn to_openapi(
     [] -> []
     urls -> [#("servers", json.array(urls, server_object))]
   }
-  let paths = [#("paths", paths_object(endpoints, resolvable))]
+  let paths = [#("paths", paths_object(endpoints, resolvable, package))]
   let components_part = case dict.is_empty(components) {
     True -> []
     False -> [
@@ -86,11 +86,15 @@ fn info_object(info: Info) -> Json {
 
 // --- paths -------------------------------------------------------------------
 
-fn paths_object(endpoints: List(Endpoint), resolvable: Set(String)) -> Json {
+fn paths_object(
+  endpoints: List(Endpoint),
+  resolvable: Set(String),
+  package: pkg.Package,
+) -> Json {
   ordered_paths(endpoints)
   |> list.map(fn(path) {
     let for_path = list.filter(endpoints, fn(e) { endpoint.path(e) == path })
-    #(path, path_item(for_path, resolvable))
+    #(path, path_item(for_path, resolvable, package))
   })
   |> json.object
 }
@@ -107,15 +111,26 @@ fn ordered_paths(endpoints: List(Endpoint)) -> List(String) {
   |> list.reverse
 }
 
-fn path_item(endpoints: List(Endpoint), resolvable: Set(String)) -> Json {
+fn path_item(
+  endpoints: List(Endpoint),
+  resolvable: Set(String),
+  package: pkg.Package,
+) -> Json {
   endpoints
   |> list.map(fn(e) {
-    #(endpoint.method_to_string(endpoint.method(e)), operation(e, resolvable))
+    #(
+      endpoint.method_to_string(endpoint.method(e)),
+      operation(e, resolvable, package),
+    )
   })
   |> json.object
 }
 
-fn operation(e: Endpoint, resolvable: Set(String)) -> Json {
+fn operation(
+  e: Endpoint,
+  resolvable: Set(String),
+  package: pkg.Package,
+) -> Json {
   let tags = case endpoint.tags(e) {
     [] -> []
     tags -> [#("tags", json.array(tags, json.string))]
@@ -124,6 +139,7 @@ fn operation(e: Endpoint, resolvable: Set(String)) -> Json {
     list.flatten([
       list.map(endpoint.path_params(e), parameter(_, "path", resolvable)),
       list.map(endpoint.query_params(e), parameter(_, "query", resolvable)),
+      reflected_query_params(endpoint.query_record(e), package),
     ])
   let parameters_part = case parameters {
     [] -> []
@@ -163,6 +179,63 @@ fn parameter(
       ],
     ]),
   )
+}
+
+/// Reflect a query-record reference into query parameters: each scalar field
+/// becomes a parameter (`Option` fields optional, the rest required). Fields
+/// without a sound scalar (or array-of-scalar) query representation — records,
+/// dicts, tuples, nested types — are omitted. Mirrors F#'s
+/// `addQueryParameters<'T>`.
+fn reflected_query_params(
+  query_record: Option(Schema),
+  package: pkg.Package,
+) -> List(Json) {
+  case query_record {
+    Some(TypeRef(module, name)) ->
+      case pkg.resolve_type(package, module, name) {
+        Ok(pkg.RecordType(fields, _)) ->
+          list.filter_map(fields, reflected_query_param)
+        _ -> []
+      }
+    _ -> []
+  }
+}
+
+fn reflected_query_param(field: pkg.Field) -> Result(Json, Nil) {
+  let #(base, required) = case field.type_ {
+    pkg.OptionType(inner) -> #(inner, False)
+    other -> #(other, True)
+  }
+  case query_scalar_oas(base) {
+    Ok(oas) -> Ok(query_parameter_json(field.name, oas, required))
+    Error(Nil) -> Error(Nil)
+  }
+}
+
+/// The scalar `Oas` a query-parameter field maps to, or `Error` if the field
+/// has no sound scalar (or array-of-scalar) query representation.
+fn query_scalar_oas(field_type: pkg.FieldType) -> Result(Oas, Nil) {
+  case field_type {
+    pkg.StringType -> Ok(OString)
+    pkg.IntType -> Ok(OInteger)
+    pkg.FloatType -> Ok(ONumber)
+    pkg.BoolType -> Ok(OBoolean)
+    pkg.ListType(element) ->
+      case query_scalar_oas(element) {
+        Ok(inner) -> Ok(OArray(inner))
+        Error(Nil) -> Error(Nil)
+      }
+    _ -> Error(Nil)
+  }
+}
+
+fn query_parameter_json(name: String, oas: Oas, required: Bool) -> Json {
+  json.object([
+    #("name", json.string(name)),
+    #("in", json.string("query")),
+    #("required", json.bool(required)),
+    #("schema", oas_to_json(oas)),
+  ])
 }
 
 fn request_body_object(schema: Schema, resolvable: Set(String)) -> Json {

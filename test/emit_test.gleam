@@ -28,6 +28,7 @@ pub fn round_trip_test() {
         endpoint.get("/todos/{id}")
           |> endpoint.with_path_param("id", param.string())
           |> endpoint.with_query_param("verbose", param.bool(), False)
+          |> endpoint.with_query_record(schema.type_ref("myapp/types", "Filter"))
           |> endpoint.with_response(200, todo_ref())
           |> endpoint.with_empty_response(404, "Not found"),
       ],

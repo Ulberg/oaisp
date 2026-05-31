@@ -169,6 +169,17 @@ BEAM). `Int` is intentionally left without an `int32`/`int64` format: a Gleam
 `Int` is an arbitrary-precision bignum, so claiming a fixed width would be
 unsound.
 
+## Query parameters
+
+Declare query parameters either way:
+
+- **Explicitly** — `query: [QueryParam("limit", param.int(), False), …]`.
+- **Reflected from a record** — `query_record: Some(type_ref("myapp/types", "TodoQuery"))`.
+  Each scalar field of the record becomes a query parameter (an `Option` field
+  is optional, the rest required; a `List(scalar)` field becomes an array
+  parameter; non-scalar fields are soundly omitted). Write the record, get the
+  parameters — mirroring F#'s `addQueryParameters<'T>`.
+
 ## Caveats
 
 - **Soundness, not completeness.** Undeclared routes are served by your fallback

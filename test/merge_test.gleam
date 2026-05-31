@@ -192,3 +192,31 @@ pub fn parameters_test() {
     )
     == Ok([#("limit", "query", False)])
 }
+
+pub fn reflected_query_record_test() {
+  // `with_query_record` reflects the record's scalar fields into query params:
+  // scalars required, the Option optional, the List(String) an array param, and
+  // non-scalar fields (the User ref, Status enum, Dict) soundly omitted.
+  let eps = [endpoint.get("/search") |> endpoint.with_query_record(todo_ref())]
+  let doc = merge.to_string(eps, info.info("Search", "1.0.0"), package())
+  let param = {
+    use name <- decode.field("name", decode.string)
+    use location <- decode.field("in", decode.string)
+    use required <- decode.field("required", decode.bool)
+    use kind <- decode.subfield(["schema", "type"], decode.string)
+    decode.success(#(name, location, required, kind))
+  }
+  assert json.parse(
+      doc,
+      decode.at(["paths", "/search", "get", "parameters"], decode.list(param)),
+    )
+    == Ok([
+      #("id", "query", True, "string"),
+      #("title", "query", True, "string"),
+      #("done", "query", True, "boolean"),
+      #("rank", "query", True, "integer"),
+      #("score", "query", True, "number"),
+      #("tags", "query", True, "array"),
+      #("note", "query", False, "string"),
+    ])
+}

@@ -44,6 +44,13 @@ pub type TodoPage {
   TodoPage(items: List(Todo), total: Int, next: Option(String))
 }
 
+/// The query accepted by `GET /todos`. `oaisp` reflects this record's fields
+/// into individual query parameters (`with_query_record`), so the record is the
+/// single source for the listing's query contract — both optional here.
+pub type TodoQuery {
+  TodoQuery(limit: Option(Int), tag: Option(String))
+}
+
 /// A structured API error.
 pub type ApiError {
   ApiError(message: String, code: Int)
