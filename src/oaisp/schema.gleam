@@ -36,6 +36,7 @@ pub fn type_ref(module module: String, name name: String) -> Schema {
 
 /// The `#(module, name)` of a [`TypeRef`](#Schema), or `Error` for an inline
 /// [`Scalar`](#Schema) — shaped for `list.filter_map` over a list of schemas.
+@internal
 pub fn type_ref_parts(schema: Schema) -> Result(#(String, String), Nil) {
   case schema {
     TypeRef(module:, name:) -> Ok(#(module, name))
