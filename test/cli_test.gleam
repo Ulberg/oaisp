@@ -65,6 +65,19 @@ pub fn build_document_rejects_unresolved_ref_test() {
   assert result.is_error(cli.build_document(package_interface_json(), endpoints))
 }
 
+pub fn build_document_rejects_unresolved_query_record_test() {
+  // `query_record` is a type reference too; typos should be reported rather
+  // than silently producing an operation with missing reflected parameters.
+  let endpoints =
+    emit.to_string(
+      emit.Document(info: info.info("Todo API", "1.0.0"), endpoints: [
+        endpoint.get("/todos")
+        |> endpoint.with_query_record(schema.type_ref("shop/types", "Ghost")),
+      ]),
+    )
+  assert result.is_error(cli.build_document(package_interface_json(), endpoints))
+}
+
 pub fn exec_captures_stdout_and_exit_code_test() {
   let output = exec.run("printf hello")
   assert output.exit_code == 0

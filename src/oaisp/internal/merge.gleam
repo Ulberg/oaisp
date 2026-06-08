@@ -28,6 +28,16 @@ import oaisp/schema.{
 
 const openapi_version = "3.1.0"
 
+/// A map from a fully-qualified type reference (`module#name`) to the concrete
+/// OpenAPI component key used for that type. This keeps references module-aware
+/// while preserving short component names when they are unambiguous.
+type ComponentIndex =
+  Dict(String, String)
+
+type ResolvedComponent {
+  ResolvedComponent(type_name: String, resolved: pkg.ResolvedType)
+}
+
 /// Build the OpenAPI 3.1 document for `endpoints` and `info`, resolving type
 /// references against `package`.
 fn to_openapi(
@@ -36,7 +46,7 @@ fn to_openapi(
   package: pkg.Package,
 ) -> Json {
   let components = resolve_closure(package, seed_refs(endpoints))
-  let resolvable = set.from_list(dict.keys(components))
+  let component_refs = component_index(components)
 
   let head = [
     #("openapi", json.string(openapi_version)),
@@ -46,13 +56,15 @@ fn to_openapi(
     [] -> []
     urls -> [#("servers", json.array(urls, server_object))]
   }
-  let paths = [#("paths", paths_object(endpoints, resolvable, package))]
+  let paths = [#("paths", paths_object(endpoints, component_refs, package))]
   let components_part = case dict.is_empty(components) {
     True -> []
     False -> [
       #(
         "components",
-        json.object([#("schemas", components_object(components, resolvable))]),
+        json.object([
+          #("schemas", components_object(components, component_refs)),
+        ]),
       ),
     ]
   }
@@ -89,13 +101,13 @@ fn info_object(info: Info) -> Json {
 
 fn paths_object(
   endpoints: List(Endpoint),
-  resolvable: Set(String),
+  component_refs: ComponentIndex,
   package: pkg.Package,
 ) -> Json {
   ordered_paths(endpoints)
   |> list.map(fn(path) {
     let for_path = list.filter(endpoints, fn(e) { endpoint.path(e) == path })
-    #(path, path_item(for_path, resolvable, package))
+    #(path, path_item(for_path, component_refs, package))
   })
   |> json.object
 }
@@ -106,14 +118,14 @@ fn ordered_paths(endpoints: List(Endpoint)) -> List(String) {
 
 fn path_item(
   endpoints: List(Endpoint),
-  resolvable: Set(String),
+  component_refs: ComponentIndex,
   package: pkg.Package,
 ) -> Json {
   endpoints
   |> list.map(fn(e) {
     #(
       endpoint.method_to_string(endpoint.method(e)),
-      operation(e, resolvable, package),
+      operation(e, component_refs, package),
     )
   })
   |> json.object
@@ -121,7 +133,7 @@ fn path_item(
 
 fn operation(
   e: Endpoint,
-  resolvable: Set(String),
+  component_refs: ComponentIndex,
   package: pkg.Package,
 ) -> Json {
   let tags = case endpoint.tags(e) {
@@ -130,8 +142,8 @@ fn operation(
   }
   let parameters =
     list.flatten([
-      list.map(endpoint.path_params(e), parameter(_, "path", resolvable)),
-      list.map(endpoint.query_params(e), parameter(_, "query", resolvable)),
+      list.map(endpoint.path_params(e), parameter(_, "path", component_refs)),
+      list.map(endpoint.query_params(e), parameter(_, "query", component_refs)),
       reflected_query_params(endpoint.query_record(e), package),
     ])
   let parameters_part = case parameters {
@@ -140,7 +152,9 @@ fn operation(
   }
   let request_body = case endpoint.body(e) {
     None -> []
-    Some(schema) -> [#("requestBody", request_body_object(schema, resolvable))]
+    Some(schema) -> [
+      #("requestBody", request_body_object(schema, component_refs)),
+    ]
   }
 
   json.object(
@@ -151,7 +165,7 @@ fn operation(
       optional("operationId", endpoint.operation_id(e)),
       parameters_part,
       request_body,
-      [#("responses", responses_object(endpoint.responses(e), resolvable))],
+      [#("responses", responses_object(endpoint.responses(e), component_refs))],
     ]),
   )
 }
@@ -159,9 +173,9 @@ fn operation(
 fn parameter(
   param: endpoint.Param,
   location: String,
-  resolvable: Set(String),
+  component_refs: ComponentIndex,
 ) -> Json {
-  let #(schema, description) = param_schema(param.schema, resolvable)
+  let #(schema, description) = param_schema(param.schema, component_refs)
   json.object(
     list.flatten([
       [#("name", json.string(param.name)), #("in", json.string(location))],
@@ -227,27 +241,27 @@ fn query_parameter_json(name: String, oas: Oas, required: Bool) -> Json {
   ])
 }
 
-fn request_body_object(schema: Schema, resolvable: Set(String)) -> Json {
+fn request_body_object(schema: Schema, component_refs: ComponentIndex) -> Json {
   json.object([
     #("required", json.bool(True)),
-    #("content", content(schema_oas(schema, resolvable))),
+    #("content", content(schema_oas(schema, component_refs))),
   ])
 }
 
 fn responses_object(
   responses: List(endpoint.Response),
-  resolvable: Set(String),
+  component_refs: ComponentIndex,
 ) -> Json {
   responses
   |> list.map(fn(response) {
-    #(int.to_string(response.status), response_object(response, resolvable))
+    #(int.to_string(response.status), response_object(response, component_refs))
   })
   |> json.object
 }
 
 fn response_object(
   response: endpoint.Response,
-  resolvable: Set(String),
+  component_refs: ComponentIndex,
 ) -> Json {
   // OpenAPI requires a description on every response; fall back to the status
   // reason phrase when the declaration didn't give one.
@@ -259,7 +273,7 @@ fn response_object(
     Some(schema) ->
       json.object(
         list.append(base, [
-          #("content", content(schema_oas(schema, resolvable))),
+          #("content", content(schema_oas(schema, component_refs))),
         ]),
       )
   }
@@ -273,24 +287,77 @@ fn content(schema: Oas) -> Json {
 
 // --- components --------------------------------------------------------------
 
+fn component_index(
+  components: Dict(String, ResolvedComponent),
+) -> ComponentIndex {
+  components
+  |> dict.to_list
+  |> list.map(fn(entry) {
+    #(entry.0, component_name(entry.0, entry.1, components))
+  })
+  |> dict.from_list
+}
+
+fn component_name(
+  key: String,
+  component: ResolvedComponent,
+  components: Dict(String, ResolvedComponent),
+) -> String {
+  case has_duplicate_type_name(component.type_name, components) {
+    False -> component.type_name
+    True -> namespaced_component_name(key)
+  }
+}
+
+fn has_duplicate_type_name(
+  type_name: String,
+  components: Dict(String, ResolvedComponent),
+) -> Bool {
+  let matches =
+    components
+    |> dict.to_list
+    |> list.filter(fn(entry) { entry.1.type_name == type_name })
+    |> list.length
+  matches > 1
+}
+
+fn namespaced_component_name(key: String) -> String {
+  case string.split_once(key, "#") {
+    Ok(#(module, name)) -> {
+      let module_name = string.split(module, "/") |> string.join(".")
+      module_name <> "." <> name
+    }
+    Error(Nil) -> key
+  }
+}
+
+fn ref_key(module: String, name: String) -> String {
+  module <> "#" <> name
+}
+
 fn components_object(
-  components: Dict(String, pkg.ResolvedType),
-  resolvable: Set(String),
+  components: Dict(String, ResolvedComponent),
+  component_refs: ComponentIndex,
 ) -> Json {
   components
   |> dict.to_list
-  |> list.sort(fn(a, b) { string.compare(a.0, b.0) })
   |> list.map(fn(entry) {
-    #(entry.0, oas_to_json(resolved_oas(entry.1, resolvable)))
+    let assert Ok(component_name) = dict.get(component_refs, entry.0)
+      as "component_refs are derived from the same component map"
+    #(
+      component_name,
+      oas_to_json(resolved_oas(entry.1.resolved, component_refs)),
+    )
   })
+  |> list.sort(fn(a, b) { string.compare(a.0, b.0) })
   |> json.object
 }
 
-/// Resolve every type reachable from `seeds`, keyed by component name.
+/// Resolve every type reachable from `seeds`, keyed by `module#name`.
 fn resolve_closure(
   package: pkg.Package,
   seeds: List(#(String, String)),
-) -> Dict(String, pkg.ResolvedType) {
+) -> Dict(String, ResolvedComponent) {
   do_closure(package, seeds, set.new(), dict.new())
 }
 
@@ -298,12 +365,12 @@ fn do_closure(
   package: pkg.Package,
   worklist: List(#(String, String)),
   visited: Set(String),
-  acc: Dict(String, pkg.ResolvedType),
-) -> Dict(String, pkg.ResolvedType) {
+  acc: Dict(String, ResolvedComponent),
+) -> Dict(String, ResolvedComponent) {
   case worklist {
     [] -> acc
     [#(module, name), ..rest] -> {
-      let key = module <> "#" <> name
+      let key = ref_key(module, name)
       case set.contains(visited, key) {
         True -> do_closure(package, rest, visited, acc)
         False -> {
@@ -317,7 +384,11 @@ fn do_closure(
                 package,
                 list.append(child_refs(resolved), rest),
                 visited,
-                dict.insert(acc, name, resolved),
+                dict.insert(
+                  acc,
+                  key,
+                  ResolvedComponent(type_name: name, resolved:),
+                ),
               )
           }
         }
@@ -359,13 +430,22 @@ pub fn unresolved_refs(
   endpoints: List(Endpoint),
   package: pkg.Package,
 ) -> List(#(String, String)) {
-  seed_refs(endpoints)
+  refs_to_validate(endpoints)
   |> list.unique
   |> list.filter(fn(ref) {
     let #(module, name) = ref
     pkg.knows_module(package, module)
     && result.is_error(pkg.resolve_type(package, module, name))
   })
+}
+
+fn refs_to_validate(endpoints: List(Endpoint)) -> List(#(String, String)) {
+  let query_records =
+    endpoints
+    |> list.map(endpoint.query_record)
+    |> option.values
+    |> list.filter_map(schema.type_ref_parts)
+  list.append(seed_refs(endpoints), query_records)
 }
 
 // --- schema (Oas) intermediate -----------------------------------------------
@@ -395,12 +475,15 @@ type Oas {
   OStringFormat(format: String)
 }
 
-fn resolved_oas(resolved: pkg.ResolvedType, resolvable: Set(String)) -> Oas {
+fn resolved_oas(
+  resolved: pkg.ResolvedType,
+  component_refs: ComponentIndex,
+) -> Oas {
   case resolved {
     pkg.RecordType(fields, documentation) -> {
       let properties =
         list.map(fields, fn(field) {
-          #(field.name, field_oas(field.type_, resolvable))
+          #(field.name, field_oas(field.type_, component_refs))
         })
       let required =
         list.filter_map(fields, fn(field) {
@@ -417,28 +500,28 @@ fn resolved_oas(resolved: pkg.ResolvedType, resolvable: Set(String)) -> Oas {
   }
 }
 
-fn field_oas(field_type: pkg.FieldType, resolvable: Set(String)) -> Oas {
+fn field_oas(field_type: pkg.FieldType, component_refs: ComponentIndex) -> Oas {
   case field_type {
     pkg.StringType -> OString
     pkg.IntType -> OInteger
     pkg.FloatType -> ONumber
     pkg.BoolType -> OBoolean
     pkg.NilType -> ONull
-    pkg.ListType(element) -> OArray(field_oas(element, resolvable))
-    pkg.OptionType(inner) -> ONullable(field_oas(inner, resolvable))
-    pkg.DictType(value) -> OMap(field_oas(value, resolvable))
+    pkg.ListType(element) -> OArray(field_oas(element, component_refs))
+    pkg.OptionType(inner) -> ONullable(field_oas(inner, component_refs))
+    pkg.DictType(value) -> OMap(field_oas(value, component_refs))
     pkg.TupleType(elements) ->
-      OTuple(list.map(elements, field_oas(_, resolvable)))
+      OTuple(list.map(elements, field_oas(_, component_refs)))
     pkg.FormattedStringType(format) -> OStringFormat(format)
     pkg.TimestampType -> OStringFormat("date-time")
-    pkg.RefType(_module, name) -> ref_or_any(name, resolvable)
+    pkg.RefType(module, name) -> ref_or_any(module, name, component_refs)
     pkg.AnyType -> OAny(None)
   }
 }
 
-fn schema_oas(schema: Schema, resolvable: Set(String)) -> Oas {
+fn schema_oas(schema: Schema, component_refs: ComponentIndex) -> Oas {
   case schema {
-    TypeRef(_module, name) -> ref_or_any(name, resolvable)
+    TypeRef(module, name) -> ref_or_any(module, name, component_refs)
     Scalar(kind, _description) -> scalar_oas(kind)
   }
 }
@@ -447,11 +530,11 @@ fn schema_oas(schema: Schema, resolvable: Set(String)) -> Oas {
 /// level (OpenAPI parameter objects describe themselves, not via the schema).
 fn param_schema(
   schema: Schema,
-  resolvable: Set(String),
+  component_refs: ComponentIndex,
 ) -> #(Oas, Option(String)) {
   case schema {
     Scalar(kind, description) -> #(scalar_oas(kind), description)
-    TypeRef(_module, name) -> #(ref_or_any(name, resolvable), None)
+    TypeRef(module, name) -> #(ref_or_any(module, name, component_refs), None)
   }
 }
 
@@ -464,10 +547,14 @@ fn scalar_oas(kind: ScalarKind) -> Oas {
   }
 }
 
-fn ref_or_any(name: String, resolvable: Set(String)) -> Oas {
-  case set.contains(resolvable, name) {
-    True -> ORef(name)
-    False -> OAny(None)
+fn ref_or_any(
+  module: String,
+  name: String,
+  component_refs: ComponentIndex,
+) -> Oas {
+  case dict.get(component_refs, ref_key(module, name)) {
+    Ok(component_name) -> ORef(component_name)
+    Error(Nil) -> OAny(None)
   }
 }
 

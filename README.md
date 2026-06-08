@@ -87,6 +87,7 @@ Doc-comments on types become schema descriptions.
 import gleam/http
 import gleam/string
 import oaisp
+import oaisp/param
 import oaisp/route.{type Route, OpenApi, ResponseBody}
 import wisp
 
