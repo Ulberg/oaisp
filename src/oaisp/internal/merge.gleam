@@ -31,7 +31,8 @@ const openapi_version = "3.1.0"
 /// A map from a fully-qualified type reference (`module#name`) to the concrete
 /// OpenAPI component key used for that type. This keeps references module-aware
 /// while preserving short component names when they are unambiguous.
-type ComponentIndex = Dict(String, String)
+type ComponentIndex =
+  Dict(String, String)
 
 type ResolvedComponent {
   ResolvedComponent(type_name: String, resolved: pkg.ResolvedType)
@@ -151,7 +152,9 @@ fn operation(
   }
   let request_body = case endpoint.body(e) {
     None -> []
-    Some(schema) -> [#("requestBody", request_body_object(schema, component_refs))]
+    Some(schema) -> [
+      #("requestBody", request_body_object(schema, component_refs)),
+    ]
   }
 
   json.object(
@@ -284,7 +287,9 @@ fn content(schema: Oas) -> Json {
 
 // --- components --------------------------------------------------------------
 
-fn component_index(components: Dict(String, ResolvedComponent)) -> ComponentIndex {
+fn component_index(
+  components: Dict(String, ResolvedComponent),
+) -> ComponentIndex {
   components
   |> dict.to_list
   |> list.map(fn(entry) {
@@ -379,7 +384,11 @@ fn do_closure(
                 package,
                 list.append(child_refs(resolved), rest),
                 visited,
-                dict.insert(acc, key, ResolvedComponent(type_name: name, resolved:)),
+                dict.insert(
+                  acc,
+                  key,
+                  ResolvedComponent(type_name: name, resolved:),
+                ),
               )
           }
         }
@@ -466,7 +475,10 @@ type Oas {
   OStringFormat(format: String)
 }
 
-fn resolved_oas(resolved: pkg.ResolvedType, component_refs: ComponentIndex) -> Oas {
+fn resolved_oas(
+  resolved: pkg.ResolvedType,
+  component_refs: ComponentIndex,
+) -> Oas {
   case resolved {
     pkg.RecordType(fields, documentation) -> {
       let properties =
