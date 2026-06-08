@@ -1,6 +1,7 @@
 import gleam/dynamic/decode
 import gleam/json
 import gleam/option.{None}
+import gleam/string
 import oaisp/endpoint
 import oaisp/info
 import oaisp/internal/fs
@@ -17,6 +18,40 @@ fn package() -> pkg.Package {
 
 fn todo_ref() -> schema.Schema {
   schema.type_ref("shop/types", "Todo")
+}
+
+fn package_with_duplicate_todo() -> pkg.Package {
+  let assert Ok(content) = fs.read("test/fixtures/package_interface.json")
+  let other_module =
+    "\"shop/other\":{"
+    <> "\"documentation\":[],"
+    <> "\"type-aliases\":{},"
+    <> "\"types\":{"
+    <> "\"Todo\":{"
+    <> "\"documentation\":\" Other todo.\\n\","
+    <> "\"deprecation\":null,"
+    <> "\"parameters\":0,"
+    <> "\"constructors\":[{"
+    <> "\"documentation\":null,"
+    <> "\"name\":\"Todo\","
+    <> "\"parameters\":[{"
+    <> "\"label\":\"slug\","
+    <> "\"type\":{"
+    <> "\"kind\":\"named\","
+    <> "\"name\":\"String\","
+    <> "\"package\":\"\","
+    <> "\"module\":\"gleam\","
+    <> "\"parameters\":[]"
+    <> "}}]}]}},"
+    <> "\"constants\":{},"
+    <> "\"functions\":{}"
+    <> "}"
+  let assert Ok(#(before, after)) =
+    string.split_once(content, "\"modules\":{\"shop/types\":")
+  let with_duplicate =
+    before <> "\"modules\":{" <> other_module <> ",\"shop/types\":" <> after
+  let assert Ok(decoded) = pkg.decode_string(with_duplicate)
+  decoded
 }
 
 fn endpoints() -> List(endpoint.Endpoint) {
@@ -224,4 +259,69 @@ pub fn reflected_query_record_test() {
       #("tags", "query", True, "array"),
       #("note", "query", False, "string"),
     ])
+}
+
+
+pub fn external_ref_with_same_name_as_component_is_not_mislinked_test() {
+  let eps = [
+    endpoint.get("/local") |> endpoint.with_response(200, todo_ref()),
+    endpoint.get("/external")
+    |> endpoint.with_response(200, schema.type_ref("dependency/types", "Todo")),
+  ]
+  let doc = merge.to_string(eps, info.info("Todos", "1.0.0"), package())
+
+  assert json.parse(
+      doc,
+      decode.at([
+        "paths", "/local", "get", "responses", "200", "content",
+        "application/json", "schema", "$ref",
+      ], decode.string),
+    )
+    == Ok("#/components/schemas/Todo")
+
+  let assert Error(_) =
+    json.parse(
+      doc,
+      decode.at([
+        "paths", "/external", "get", "responses", "200", "content",
+        "application/json", "schema", "$ref",
+      ], decode.string),
+    )
+}
+
+pub fn duplicate_type_names_get_namespaced_components_test() {
+  let eps = [
+    endpoint.get("/todos") |> endpoint.with_response(200, todo_ref()),
+    endpoint.get("/other-todos")
+    |> endpoint.with_response(200, schema.type_ref("shop/other", "Todo")),
+  ]
+  let doc =
+    merge.to_string(eps, info.info("Todos", "1.0.0"), package_with_duplicate_todo())
+
+  assert json.parse(
+      doc,
+      decode.at([
+        "paths", "/todos", "get", "responses", "200", "content",
+        "application/json", "schema", "$ref",
+      ], decode.string),
+    )
+    == Ok("#/components/schemas/shop.types.Todo")
+  assert json.parse(
+      doc,
+      decode.at([
+        "paths", "/other-todos", "get", "responses", "200", "content",
+        "application/json", "schema", "$ref",
+      ], decode.string),
+    )
+    == Ok("#/components/schemas/shop.other.Todo")
+  assert json.parse(
+      doc,
+      decode.at(["components", "schemas", "shop.other.Todo", "type"], decode.string),
+    )
+    == Ok("object")
+  assert json.parse(
+      doc,
+      decode.at(["components", "schemas", "shop.types.Todo", "type"], decode.string),
+    )
+    == Ok("object")
 }
