@@ -1,6 +1,7 @@
 import gleam/dynamic/decode
 import gleam/json
 import gleam/result
+import gleam/string
 import oaisp/cli
 import oaisp/endpoint
 import oaisp/info
@@ -76,6 +77,37 @@ pub fn build_document_rejects_unresolved_query_record_test() {
       ]),
     )
   assert result.is_error(cli.build_document(package_interface_json(), endpoints))
+}
+
+pub fn build_document_rejects_duplicate_routes_test() {
+  // Two routes with the same method and path collapse to one operation in the
+  // document while the server serves only the first — reject it, naming the
+  // offender, rather than letting the document and the server drift apart.
+  let endpoints =
+    emit.to_string(
+      emit.Document(info: info.info("Todo API", "1.0.0"), endpoints: [
+        endpoint.get("/todos") |> endpoint.with_response(200, todo_ref()),
+        endpoint.get("/todos") |> endpoint.with_response(201, todo_ref()),
+      ]),
+    )
+  let assert Error(message) =
+    cli.build_document(package_interface_json(), endpoints)
+  assert string.contains(message, "GET /todos")
+}
+
+pub fn build_document_allows_same_path_different_methods_test() {
+  // A shared path is fine while the methods differ: GET and POST /todos are
+  // distinct operations, not a duplicate.
+  let endpoints =
+    emit.to_string(
+      emit.Document(info: info.info("Todo API", "1.0.0"), endpoints: [
+        endpoint.get("/todos") |> endpoint.with_response(200, todo_ref()),
+        endpoint.post("/todos")
+          |> endpoint.with_body(todo_ref())
+          |> endpoint.with_response(201, todo_ref()),
+      ]),
+    )
+  assert result.is_ok(cli.build_document(package_interface_json(), endpoints))
 }
 
 pub fn exec_captures_stdout_and_exit_code_test() {

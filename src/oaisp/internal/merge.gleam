@@ -448,6 +448,20 @@ fn refs_to_validate(endpoints: List(Endpoint)) -> List(#(String, String)) {
   list.append(seed_refs(endpoints), query_records)
 }
 
+/// Routes that share a `(method, path)` pair, as `#(method, path)`. A path item
+/// can hold only one operation per method, so duplicates collapse in the
+/// document (last wins) while the server's matcher serves the first — the very
+/// drift the single route list is meant to rule out. Almost certainly a mistake.
+pub fn duplicate_routes(endpoints: List(Endpoint)) -> List(#(String, String)) {
+  let routes =
+    list.map(endpoints, fn(e) {
+      #(endpoint.method_to_string(endpoint.method(e)), endpoint.path(e))
+    })
+  routes
+  |> list.filter(fn(route) { list.count(routes, fn(r) { r == route }) > 1 })
+  |> list.unique
+}
+
 // --- schema (Oas) intermediate -----------------------------------------------
 
 /// A JSON Schema node, built structurally so nullability and `anyOf` can be

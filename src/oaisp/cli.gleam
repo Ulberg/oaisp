@@ -96,10 +96,29 @@ pub fn build_document(
     package_interface_json,
     endpoints_json,
   ))
-  case merge.unresolved_refs(document.endpoints, package) {
-    [] -> Ok(merge.to_string(document.endpoints, document.info, package))
-    refs -> Error(unresolved_refs_message(refs))
+  case merge.duplicate_routes(document.endpoints) {
+    [] ->
+      case merge.unresolved_refs(document.endpoints, package) {
+        [] -> Ok(merge.to_string(document.endpoints, document.info, package))
+        refs -> Error(unresolved_refs_message(refs))
+      }
+    routes -> Error(duplicate_routes_message(routes))
   }
+}
+
+/// Two routes with the same method and path would describe one operation in the
+/// document while the server runs only the first — the document and the server
+/// would disagree. List the offenders so the stray route is easy to find.
+fn duplicate_routes_message(routes: List(#(String, String))) -> String {
+  let bullets =
+    routes
+    |> list.map(fn(route) {
+      "  - " <> string.uppercase(route.0) <> " " <> route.1
+    })
+    |> string.join("\n")
+  "these routes share a method and path — each (method, path) must be unique, or "
+  <> "the generated document and your running server will drift:\n"
+  <> bullets
 }
 
 /// A `type_ref` that doesn't resolve would leave a dangling `$ref` in the
