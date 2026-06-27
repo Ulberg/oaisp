@@ -102,7 +102,11 @@ pub fn build_document(
         [] ->
           case merge.unresolved_refs(document.endpoints, package) {
             [] ->
-              Ok(merge.to_string(document.endpoints, document.info, package))
+              case merge.malformed_formats(document.endpoints, package) {
+                [] ->
+                  Ok(merge.to_string(document.endpoints, document.info, package))
+                formats -> Error(malformed_formats_message(formats))
+              }
             refs -> Error(unresolved_refs_message(refs))
           }
         mismatches -> Error(path_param_mismatches_message(mismatches))
@@ -173,6 +177,24 @@ fn path_param_mismatches_message(
   "these path parameters don't match the path template — every `in: path` "
   <> "parameter must name a `{placeholder}`, and every placeholder must be "
   <> "declared:\n"
+  <> bullets
+}
+
+/// A malformed `@format` directive is dropped at emit time, so the format it
+/// asked for never reaches the schema. List the offenders — the type and the
+/// line — so the typo (a missing colon, an empty field or format) is obvious.
+fn malformed_formats_message(
+  formats: List(#(String, String, String)),
+) -> String {
+  let bullets =
+    formats
+    |> list.map(fn(format) {
+      let #(module, name, line) = format
+      "  - " <> module <> "." <> name <> ": " <> line
+    })
+    |> string.join("\n")
+  "these `@format` directives are malformed — each must read `@format <field>: "
+  <> "<format>`:\n"
   <> bullets
 }
 

@@ -243,8 +243,8 @@ pub fn method_to_string(method: Method) -> String {
 
 /// Every `(module, name)` type reference the endpoint mentions — across its body,
 /// response bodies, and path/query parameters — deduplicated. The single source
-/// for "which public types does this endpoint touch", used by both the merge
-/// (to seed the component closure) and the lint (to check resolvability).
+/// for "which public types does this endpoint touch", used by the merge both to
+/// seed the component closure and to check that every reference resolves.
 @internal
 pub fn type_refs(endpoint: Endpoint) -> List(#(String, String)) {
   let bodies = [endpoint.body, ..list.map(endpoint.responses, fn(r) { r.body })]
@@ -255,8 +255,8 @@ pub fn type_refs(endpoint: Endpoint) -> List(#(String, String)) {
 }
 
 /// The placeholder name in a `{name}` path segment, or `None` for a literal
-/// segment. The one definition of oaisp's path-placeholder syntax, shared by
-/// route matching and lint.
+/// segment. The one definition of oaisp's path-placeholder syntax, used by route
+/// matching.
 @internal
 pub fn placeholder_name(segment: String) -> Option(String) {
   case string.starts_with(segment, "{") && string.ends_with(segment, "}") {
