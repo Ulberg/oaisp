@@ -297,6 +297,27 @@ pub fn external_ref_with_same_name_as_component_is_not_mislinked_test() {
     )
 }
 
+pub fn duplicate_routes_detected_test() {
+  // Two routes share `GET /todos`; the third differs only in method, so it is
+  // not a duplicate. Each clashing pair is reported once.
+  let eps = [
+    endpoint.get("/todos"),
+    endpoint.get("/todos"),
+    endpoint.post("/todos"),
+  ]
+  assert merge.duplicate_routes(eps) == [#("get", "/todos")]
+}
+
+pub fn distinct_routes_have_no_duplicates_test() {
+  // A shared path with differing methods is not a duplicate.
+  let eps = [
+    endpoint.get("/todos"),
+    endpoint.post("/todos"),
+    endpoint.get("/todos/{id}"),
+  ]
+  assert merge.duplicate_routes(eps) == []
+}
+
 pub fn duplicate_type_names_get_namespaced_components_test() {
   let eps = [
     endpoint.get("/todos") |> endpoint.with_response(200, todo_ref()),
