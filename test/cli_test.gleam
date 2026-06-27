@@ -110,6 +110,47 @@ pub fn build_document_allows_same_path_different_methods_test() {
   assert result.is_ok(cli.build_document(package_interface_json(), endpoints))
 }
 
+pub fn build_document_rejects_path_param_without_placeholder_test() {
+  // A declared `in: path` parameter with no `{id}` in the path template is
+  // invalid OpenAPI 3.1; the error must name the offending endpoint.
+  let endpoints =
+    emit.to_string(
+      emit.Document(info: info.info("Todo API", "1.0.0"), endpoints: [
+        endpoint.get("/todos")
+        |> endpoint.with_path_param("id", param.string())
+        |> endpoint.with_response(200, todo_ref()),
+      ]),
+    )
+  let assert Error(message) =
+    cli.build_document(package_interface_json(), endpoints)
+  assert string.contains(message, "get /todos")
+  assert string.contains(message, "id")
+}
+
+pub fn build_document_rejects_placeholder_without_path_param_test() {
+  // A `{id}` placeholder with no declared path parameter leaves it
+  // undocumented; the error must name the offending endpoint.
+  let endpoints =
+    emit.to_string(
+      emit.Document(info: info.info("Todo API", "1.0.0"), endpoints: [
+        endpoint.get("/todos/{id}")
+        |> endpoint.with_response(200, todo_ref()),
+      ]),
+    )
+  let assert Error(message) =
+    cli.build_document(package_interface_json(), endpoints)
+  assert string.contains(message, "get /todos/{id}")
+  assert string.contains(message, "id")
+}
+
+pub fn build_document_accepts_matched_path_param_test() {
+  // A declared parameter that matches its `{id}` placeholder is valid.
+  assert result.is_ok(cli.build_document(
+    package_interface_json(),
+    endpoints_json(),
+  ))
+}
+
 pub fn exec_captures_stdout_and_exit_code_test() {
   let output = exec.run("printf hello")
   assert output.exit_code == 0

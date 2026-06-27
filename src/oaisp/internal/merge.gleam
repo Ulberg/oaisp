@@ -462,6 +462,57 @@ pub fn duplicate_routes(endpoints: List(Endpoint)) -> List(#(String, String)) {
   |> list.unique
 }
 
+/// A path parameter that doesn't line up with the route's path template: a
+/// declared `in: path` parameter with no matching `{placeholder}` segment, or a
+/// `{placeholder}` segment that no path parameter documents. Either one makes
+/// the emitted document invalid OpenAPI 3.1.
+pub type PathParamMismatch {
+  /// A declared path parameter with no `{name}` placeholder in the path.
+  ParamWithoutPlaceholder(method: String, path: String, name: String)
+  /// A `{name}` placeholder in the path that no path parameter declares.
+  PlaceholderWithoutParam(method: String, path: String, name: String)
+}
+
+/// Path parameters that don't match the path template. OpenAPI 3.1 requires
+/// every `in: path` parameter to name a `{placeholder}` in the path, and every
+/// placeholder to be documented by a path parameter; a mismatch either way is an
+/// invalid document, almost always a typo or a forgotten declaration.
+pub fn path_param_mismatches(
+  endpoints: List(Endpoint),
+) -> List(PathParamMismatch) {
+  list.flat_map(endpoints, endpoint_path_param_mismatches)
+}
+
+fn endpoint_path_param_mismatches(e: Endpoint) -> List(PathParamMismatch) {
+  let method = endpoint.method_to_string(endpoint.method(e))
+  let path = endpoint.path(e)
+  let placeholders = path_placeholders(path)
+  let declared = list.map(endpoint.path_params(e), fn(param) { param.name })
+
+  let params_without_placeholder =
+    declared
+    |> list.filter(fn(name) { !list.contains(placeholders, name) })
+    |> list.map(fn(name) { ParamWithoutPlaceholder(method:, path:, name:) })
+  let placeholders_without_param =
+    placeholders
+    |> list.filter(fn(name) { !list.contains(declared, name) })
+    |> list.map(fn(name) { PlaceholderWithoutParam(method:, path:, name:) })
+
+  list.append(params_without_placeholder, placeholders_without_param)
+}
+
+/// The `{placeholder}` names in `path`, in order. The path is split the same way
+/// route matching splits it (on `"/"`, dropping empties), so the lint sees the
+/// same segments the runtime does.
+fn path_placeholders(path: String) -> List(String) {
+  path
+  |> string.split("/")
+  |> list.filter(fn(segment) { segment != "" })
+  |> list.filter_map(fn(segment) {
+    endpoint.placeholder_name(segment) |> option.to_result(Nil)
+  })
+}
+
 // --- schema (Oas) intermediate -----------------------------------------------
 
 /// A JSON Schema node, built structurally so nullability and `anyOf` can be

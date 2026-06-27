@@ -98,9 +98,14 @@ pub fn build_document(
   ))
   case merge.duplicate_routes(document.endpoints) {
     [] ->
-      case merge.unresolved_refs(document.endpoints, package) {
-        [] -> Ok(merge.to_string(document.endpoints, document.info, package))
-        refs -> Error(unresolved_refs_message(refs))
+      case merge.path_param_mismatches(document.endpoints) {
+        [] ->
+          case merge.unresolved_refs(document.endpoints, package) {
+            [] ->
+              Ok(merge.to_string(document.endpoints, document.info, package))
+            refs -> Error(unresolved_refs_message(refs))
+          }
+        mismatches -> Error(path_param_mismatches_message(mismatches))
       }
     routes -> Error(duplicate_routes_message(routes))
   }
@@ -130,6 +135,44 @@ fn unresolved_refs_message(refs: List(#(String, String))) -> String {
     |> string.join("\n")
   "these type references don't resolve against the package interface — check the "
   <> "module path and name, and that the type is public:\n"
+  <> bullets
+}
+
+/// A path parameter that doesn't match the path template leaves an invalid
+/// OpenAPI 3.1 document. List the offenders — the endpoint and whether a
+/// parameter has no placeholder, or a placeholder has no parameter — so the
+/// missing declaration or the typo is obvious.
+fn path_param_mismatches_message(
+  mismatches: List(merge.PathParamMismatch),
+) -> String {
+  let bullets =
+    mismatches
+    |> list.map(fn(mismatch) {
+      case mismatch {
+        merge.ParamWithoutPlaceholder(method:, path:, name:) ->
+          "  - "
+          <> method
+          <> " "
+          <> path
+          <> ": path parameter `"
+          <> name
+          <> "` has no matching `{"
+          <> name
+          <> "}` in the path"
+        merge.PlaceholderWithoutParam(method:, path:, name:) ->
+          "  - "
+          <> method
+          <> " "
+          <> path
+          <> ": `{"
+          <> name
+          <> "}` in the path has no declared path parameter"
+      }
+    })
+    |> string.join("\n")
+  "these path parameters don't match the path template — every `in: path` "
+  <> "parameter must name a `{placeholder}`, and every placeholder must be "
+  <> "declared:\n"
   <> bullets
 }
 

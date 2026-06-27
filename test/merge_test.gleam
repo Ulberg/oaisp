@@ -261,6 +261,31 @@ pub fn reflected_query_record_test() {
     ])
 }
 
+pub fn path_param_mismatches_test() {
+  // A declared parameter matching its placeholder, a declared parameter with no
+  // placeholder, and a placeholder with no declared parameter.
+  let eps = [
+    endpoint.get("/todos/{id}")
+      |> endpoint.with_path_param("id", param.string()),
+    endpoint.get("/todos")
+      |> endpoint.with_path_param("id", param.string()),
+    endpoint.get("/todos/{id}"),
+  ]
+  assert merge.path_param_mismatches(eps)
+    == [
+      merge.ParamWithoutPlaceholder("get", "/todos", "id"),
+      merge.PlaceholderWithoutParam("get", "/todos/{id}", "id"),
+    ]
+}
+
+pub fn matched_path_param_has_no_mismatch_test() {
+  let eps = [
+    endpoint.get("/todos/{id}")
+    |> endpoint.with_path_param("id", param.string()),
+  ]
+  assert merge.path_param_mismatches(eps) == []
+}
+
 pub fn external_ref_with_same_name_as_component_is_not_mislinked_test() {
   let eps = [
     endpoint.get("/local") |> endpoint.with_response(200, todo_ref()),
