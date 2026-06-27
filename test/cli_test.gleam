@@ -151,6 +151,27 @@ pub fn build_document_accepts_matched_path_param_test() {
   ))
 }
 
+pub fn build_document_rejects_malformed_format_directive_test() {
+  // A `@format` directive on a reached type that isn't `@format <field>: <format>`
+  // (here a line with no colon) is reported before emit — naming the type and the
+  // offending line — rather than being silently dropped from the schema.
+  let assert Ok(package_interface) =
+    fs.read("test/fixtures/format_package_interface.json")
+  let endpoints =
+    emit.to_string(
+      emit.Document(info: info.info("Contacts", "1.0.0"), endpoints: [
+        endpoint.get("/contacts")
+        |> endpoint.with_response(
+          200,
+          schema.type_ref("contacts/types", "Contact"),
+        ),
+      ]),
+    )
+  let assert Error(message) = cli.build_document(package_interface, endpoints)
+  assert string.contains(message, "Contact")
+  assert string.contains(message, "@format brokenline")
+}
+
 pub fn exec_captures_stdout_and_exit_code_test() {
   let output = exec.run("printf hello")
   assert output.exit_code == 0

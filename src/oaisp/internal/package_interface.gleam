@@ -317,7 +317,8 @@ fn parse_format_line(line: String) -> FormatDirective {
 }
 
 /// The well-formed directives as a `field -> format` dict (later wins on
-/// duplicates). Malformed lines are dropped; `lint` surfaces them separately.
+/// duplicates). Malformed lines are dropped here; merge surfaces them separately
+/// via [`malformed_format_lines`](#malformed_format_lines).
 fn format_map(directives: List(FormatDirective)) -> dict.Dict(String, String) {
   directives
   |> list.filter_map(fn(directive) {
@@ -327,6 +328,31 @@ fn format_map(directives: List(FormatDirective)) -> dict.Dict(String, String) {
     }
   })
   |> dict.from_list
+}
+
+/// The malformed `@format` directive lines in a type's doc comment — the lines
+/// [`parse_format_lines`](#parse_format_lines) reports as
+/// [`MalformedFormat`](#FormatDirective). Empty when the type resolves cleanly,
+/// carries no directives, or doesn't exist. Lets merge surface a typo'd directive
+/// that [`format_map`](#format_map) would otherwise silently drop.
+pub fn malformed_format_lines(
+  package: Package,
+  module module: String,
+  name name: String,
+) -> List(String) {
+  case lookup_type(package, module:, name:) {
+    Error(_) -> []
+    Ok(definition) ->
+      definition.documentation
+      |> raw_doc_lines
+      |> parse_format_lines
+      |> list.filter_map(fn(directive) {
+        case directive {
+          MalformedFormat(line:) -> Ok(line)
+          FormatDirective(..) -> Error(Nil)
+        }
+      })
+  }
 }
 
 fn strip_one_leading_space(line: String) -> String {

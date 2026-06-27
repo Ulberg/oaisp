@@ -440,12 +440,46 @@ pub fn unresolved_refs(
 }
 
 fn refs_to_validate(endpoints: List(Endpoint)) -> List(#(String, String)) {
-  let query_records =
-    endpoints
-    |> list.map(endpoint.query_record)
-    |> option.values
-    |> list.filter_map(schema.type_ref_parts)
-  list.append(seed_refs(endpoints), query_records)
+  list.append(seed_refs(endpoints), query_record_refs(endpoints))
+}
+
+/// The malformed `@format` directives on the types the document reaches, each
+/// paired with the `(module, name)` of the type it sits on. Like
+/// [`unresolved_refs`](#unresolved_refs), this scopes validation to the types the
+/// document actually reaches — the transitive component closure plus the
+/// reflected query records — so a typo'd directive on an unrelated type doesn't
+/// block generation. A malformed directive is dropped at emit time, taking the
+/// format it asked for with it, so the CLI reports these before emitting.
+pub fn malformed_formats(
+  endpoints: List(Endpoint),
+  package: pkg.Package,
+) -> List(#(String, String, String)) {
+  reached_refs(endpoints, package)
+  |> list.unique
+  |> list.flat_map(fn(ref) {
+    let #(module, name) = ref
+    pkg.malformed_format_lines(package, module, name)
+    |> list.map(fn(line) { #(module, name, line) })
+  })
+}
+
+/// Every `(module, name)` the document reaches: the transitive closure of the
+/// endpoints' component references, plus the reflected query-record types.
+fn reached_refs(
+  endpoints: List(Endpoint),
+  package: pkg.Package,
+) -> List(#(String, String)) {
+  resolve_closure(package, seed_refs(endpoints))
+  |> dict.keys
+  |> list.filter_map(fn(key) { string.split_once(key, "#") })
+  |> list.append(query_record_refs(endpoints))
+}
+
+fn query_record_refs(endpoints: List(Endpoint)) -> List(#(String, String)) {
+  endpoints
+  |> list.map(endpoint.query_record)
+  |> option.values
+  |> list.filter_map(schema.type_ref_parts)
 }
 
 /// Routes that share a `(method, path)` pair, as `#(method, path)`. A path item
